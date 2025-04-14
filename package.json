@@ -1,0 +1,14 @@
+
+{
+  "name": "sahab-scraper",
+  "version": "1.0.0",
+  "description": "Simple web scraper for Sahab AI Agent",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "axios": "^1.5.0",
+    "cheerio": "^1.0.0-rc.12"
+  }
+}
