@@ -1,50 +1,83 @@
+// api/scrape.js
+
 const axios = require('axios');
 const cheerio = require('cheerio');
 
 module.exports = async (req, res) => {
-  const url = req.query.s;
+  // نقرأ الرابط من باراميتر ?url=
+  const url = req.query.url;
+
   if (!url) {
-    return res.status(400).json({ success: false, message: 'يرجى تمرير رابط المتجر عبر ?s=' });
+    return res.status(400).json({
+      success: false,
+      message: '❌ يرجى تمرير رابط الموقع عبر ?url='
+    });
   }
 
   try {
+    // نجلب محتوى الصفحة
     const { data } = await axios.get(url, { timeout: 10000 });
     const $ = cheerio.load(data);
 
-    // 1. اسم المنتج
-    const name = $('h1.text-xl.md\\:text-2xl.leading-10.font-bold.text-store-text-primary')
-      .text()
-      .trim();
+    // معلومات عامة عن الصفحة
+    const title       = $('title').text().trim() || '';
+    const description = $('meta[name="description"]').attr('content') || '';
+    const keywords    = $('meta[name="keywords"]').attr('content') || '';
 
-    // 2. وصف المنتج
-    const description = $('.product-single-top-description article')
-      .text()
-      .replace(/\s+/g, ' ')
-      .trim();
+    // نجمع كل المنتجات
+    const products = [];
+    $('.product-single').each((_, el) => {
+      const $el = $(el);
 
-    // 3. السعر (بالخط الجديد)
-    let priceText = $('h2.text-store-text-primary.font-bold.text-xl.inline-block')
-      .first()
-      .text()
-      .trim();
-    // نظّف السعر من أي رموز أو مسافات:
-    const price = priceText.replace(/[^\d\u0660-\u0669]/g, '').trim();  
+      // اسم المنتج
+      const name = $el
+        .find('h1.text-xl, h1.text-2xl, .product-title')
+        .first()
+        .text()
+        .trim();
 
-    // 4. صورة المنتج
-    let image = $('img.product-single__photo, img.featured__media')
-      .first()
-      .attr('src') || '';
-    if (image.startsWith('//')) image = 'https:' + image;
+      // وصف المنتج
+      const desc = $el
+        .find('.product-single-top-description, .description, .product-desc')
+        .first()
+        .text()
+        .trim();
 
-    return res.status(200).json({
-      success: true,
-      name,
-      description,
-      price,   // هنا السعر الرقمي كـ string
-      image
+      // سعر المنتج
+      const price = $el
+        .find('h2.text-store-text-primary, .price, .product-price')
+        .first()
+        .text()
+        .trim();
+
+      // صورة المنتج
+      let img = $el.find('img').first().attr('src') || '';
+      // إذا كان الـ src نسبيّ، يمكن تكوينه بناءً على رابط الـ url
+      if (img && img.startsWith('/')) {
+        const base = new URL(url).origin;
+        img = base + img;
+      }
+
+      // نضيف المنتج إلى المصفوفة
+      if (name || desc || price || img) {
+        products.push({ name, description: desc, price, img });
+      }
     });
+
+    // نرجّع النتيجة
+    res.status(200).json({
+      success: true,
+      title,
+      description,
+      keywords,
+      products
+    });
+
   } catch (error) {
-    console.error('Scraper Error:', error);
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('Scraper error:', error);
+    res.status(500).json({
+      success: false,
+      message: `💥 خطأ أثناء جلب البيانات: ${error.message}`
+    });
   }
 };
