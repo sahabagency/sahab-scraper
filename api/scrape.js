@@ -4,7 +4,7 @@ const cheerio  = require('cheerio');
 
 module.exports = async (req, res) => {
   // بدل req.query.s نستخدم req.query.url
-  const url = req.query.url;
+   const url = req.query.url || req.query.s;
 
   if (!url) {
     return res
