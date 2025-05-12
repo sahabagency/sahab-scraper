@@ -1,88 +1,65 @@
-// api/scrape.js
-
 const axios = require('axios');
 const cheerio = require('cheerio');
 
 module.exports = async (req, res) => {
-  const pageUrl = req.query.url;
-  if (!pageUrl) {
-    return res.status(400).json({
-      success: false,
-      message: '❌ يرجى تمرير رابط الموقع عبر ?url='
-    });
+  const url = req.query.url;        // أو ?s=
+  if (!url) {
+    return res.status(400).json({ success: false, message: 'يرجى تمرير رابط المتجر عبر ?url=' });
   }
 
   try {
-    // 1) أولاً نحاول جلب sitemap.xml
-    const sitemapUrl = new URL('/sitemap.xml', pageUrl).href;
-    const { data: sitemapXml } = await axios.get(sitemapUrl, { timeout: 10000 });
-    const $s = cheerio.load(sitemapXml, { xmlMode: true });
+    const { data } = await axios.get(url);
+    const $ = cheerio.load(data);
 
-    // 2) نجمّع كل الروابط اللي فيها "/p/" من <loc>
-    const productLinks = new Set();
-    $s('url > loc').each((_, loc) => {
-      const u = $s(loc).text().trim();
-      if (u.includes('/p/')) productLinks.add(u);
-    });
+    // عنوان ومتا
+    const title = $('title').text().trim() || '';
+    const description = $('meta[name="description"]').attr('content') || '';
 
-    // إذا ما لاقينا أي لينكات، نبطي fallback على البحث اليدوي
-    if (productLinks.size === 0) {
-      const { data: html } = await axios.get(pageUrl, { timeout: 10000 });
-      const $ = cheerio.load(html);
-      $('a[href*="/p/"]').each((_, a) => {
-        let href = $(a).attr('href');
-        if (href.startsWith('/')) href = new URL(href, pageUrl).href;
-        productLinks.add(href);
-      });
-    }
+    // الأقسام (لو موجودة في القائمة الرئيسية)
+    const categories = $('.main-menu a[href*="/ar/collection"]').map((i, el) =>
+      $(el).text().trim()
+    ).get();
 
-    // 3) نمرّ على كل رابط منتج ونستخرج البيانات
-    const products = [];
-    for (const link of productLinks) {
-      try {
-        const { data: prodHtml } = await axios.get(link, { timeout: 10000 });
-        const $$ = cheerio.load(prodHtml);
+    // كل المنتجات
+    const products = $('.grid__item, .product-card').map((i, el) => {
+      // اسم المنتج
+      const name = $(el)
+        .find('h1.text-xl, h2.text-store-text-primary')
+        .first().text().trim();
 
-        // اسم المنتج (مثال على الهيدر h1)
-        const name = $$('h1.text-xl, h1.text-2xl, .product-title').first().text().trim();
+      // الوصف التفصيلي
+      const desc = $(el)
+        .find('.product-single-top-description article')
+        .text().trim();
 
-        // وصف المنتج
-        const description = $$('.product-single-top-description article, .description')
-          .first().text().trim();
+      // السعر (مثلاً داخل <i class="sicon-sar">)
+      const price = $(el)
+        .find('h2 .sicon-sar')
+        .parent()
+        .text()
+        .replace(/\s+/g, ' ')
+        .trim();
 
-        // سعر المنتج
-        let price = $$('h2.text-store-text-primary, .price, .product-price')
-          .first().text().trim();
+      // صورة
+      const img = $(el)
+        .find('img')
+        .attr('src') || '';
 
-        // صورة رئيسية
-        let img = $$('img').first().attr('src') || '';
-        if (img.startsWith('/')) img = new URL(img, link).href;
-
-        // تصنيفات (breadcrumb)
-        const categories = [];
-        $$('.breadcrumb a').each((_, b) => {
-          const txt = $$(b).text().trim();
-          if (txt) categories.push(txt);
-        });
-
-        products.push({ link, name, description, price, img, categories });
-
-      } catch (prodErr) {
-        console.warn(`⚠️ خطأ بجلب بيانات ${link}: ${prodErr.message}`);
-      }
-    }
+      return { name, desc, price, img };
+    }).get();
 
     return res.status(200).json({
       success: true,
+      title,
+      description,
+      categories,
       count: products.length,
       products
     });
 
-  } catch (err) {
-    console.error('❌ خطأ عام في scraper:', err);
-    return res.status(500).json({
-      success: false,
-      message: `خطأ أثناء جلب أو تحليل البيانات: ${err.message}`
-    });
+  } catch (error) {
+    return res
+      .status(500)
+      .json({ success: false, message: `خطأ أثناء جلب أو تحليل البيانات: ${error.message}` });
   }
 };
