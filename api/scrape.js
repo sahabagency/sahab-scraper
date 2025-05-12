@@ -13,22 +13,28 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // 1) نجلب HTML الصفحة الأولى
-    const { data: html } = await axios.get(pageUrl, { timeout: 10000 });
-    const $ = cheerio.load(html);
+    // 1) أولاً نحاول جلب sitemap.xml
+    const sitemapUrl = new URL('/sitemap.xml', pageUrl).href;
+    const { data: sitemapXml } = await axios.get(sitemapUrl, { timeout: 10000 });
+    const $s = cheerio.load(sitemapXml, { xmlMode: true });
 
-    // 2) نجمّع كل روابط المنتجات (URL) اللي فيها "/p/"
+    // 2) نجمّع كل الروابط اللي فيها "/p/" من <loc>
     const productLinks = new Set();
-    $('a[href*="/p/"]').each((_, a) => {
-      let href = $(a).attr('href');
-      // نبني رابط مطلق إذا كان نسبي
-      if (href && href.startsWith('/')) {
-        href = new URL(href, pageUrl).href;
-      }
-      if (href && href.startsWith('http')) {
-        productLinks.add(href);
-      }
+    $s('url > loc').each((_, loc) => {
+      const u = $s(loc).text().trim();
+      if (u.includes('/p/')) productLinks.add(u);
     });
+
+    // إذا ما لاقينا أي لينكات، نبطي fallback على البحث اليدوي
+    if (productLinks.size === 0) {
+      const { data: html } = await axios.get(pageUrl, { timeout: 10000 });
+      const $ = cheerio.load(html);
+      $('a[href*="/p/"]').each((_, a) => {
+        let href = $(a).attr('href');
+        if (href.startsWith('/')) href = new URL(href, pageUrl).href;
+        productLinks.add(href);
+      });
+    }
 
     // 3) نمرّ على كل رابط منتج ونستخرج البيانات
     const products = [];
@@ -37,34 +43,22 @@ module.exports = async (req, res) => {
         const { data: prodHtml } = await axios.get(link, { timeout: 10000 });
         const $$ = cheerio.load(prodHtml);
 
-        // اسم المنتج
-        const name = $$('h1.text-xl, h1.text-2xl, .product-title')
-          .first()
-          .text()
-          .trim();
+        // اسم المنتج (مثال على الهيدر h1)
+        const name = $$('h1.text-xl, h1.text-2xl, .product-title').first().text().trim();
 
         // وصف المنتج
         const description = $$('.product-single-top-description article, .description')
-          .first()
-          .text()
-          .trim();
+          .first().text().trim();
 
         // سعر المنتج
         let price = $$('h2.text-store-text-primary, .price, .product-price')
-          .first()
-          .text()
-          .trim();
-        // ممكن تحتاج تنظيف إضافي (مثل إزالة رموز العملة)
+          .first().text().trim();
 
         // صورة رئيسية
-        let img = $$('img')
-          .first()
-          .attr('src') || '';
-        if (img.startsWith('/')) {
-          img = new URL(img, link).href;
-        }
+        let img = $$('img').first().attr('src') || '';
+        if (img.startsWith('/')) img = new URL(img, link).href;
 
-        // تصنيفات المنتج (Breadcrumb)
+        // تصنيفات (breadcrumb)
         const categories = [];
         $$('.breadcrumb a').each((_, b) => {
           const txt = $$(b).text().trim();
@@ -74,7 +68,7 @@ module.exports = async (req, res) => {
         products.push({ link, name, description, price, img, categories });
 
       } catch (prodErr) {
-        console.warn(`⚠️ خطأ بجلب بيانات المنتج ${link}:`, prodErr.message);
+        console.warn(`⚠️ خطأ بجلب بيانات ${link}: ${prodErr.message}`);
       }
     }
 
@@ -85,10 +79,10 @@ module.exports = async (req, res) => {
     });
 
   } catch (err) {
-    console.error('❌ خطأ عام في الـ scraper:', err);
+    console.error('❌ خطأ عام في scraper:', err);
     return res.status(500).json({
       success: false,
-      message: `خطأ أثناء جلب الصفحة أو تحليلها: ${err.message}`
+      message: `خطأ أثناء جلب أو تحليل البيانات: ${err.message}`
     });
   }
 };
