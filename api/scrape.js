@@ -1,39 +1,49 @@
-import axios from 'axios';
-import * as cheerio from 'cheerio';
+// scraper.js
+import express from 'express';
+import cors from 'cors';
+import puppeteer from 'puppeteer';
 
-export default async function handler(req, res) {
+const app = express();
+app.use(cors());
+
+app.get('/api/scrape', async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'Missing url parameter' });
 
   try {
-    const { data: html } = await axios.get(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0' }
+    const browser = await puppeteer.launch({
+      headless: 'new', // بدون واجهة رسومية
+      args: ['--no-sandbox', '--disable-setuid-sandbox']
     });
-    const $ = cheerio.load(html);
+    const page = await browser.newPage();
 
-    const products = [];
+    await page.setUserAgent('Mozilla/5.0');
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 0 });
 
-    $('a[href*="/p"]').each((i, el) => {
-      const productUrl = 'https://khairatlaziza.com' + $(el).attr('href');
-      const name = $(el).find('h2, h3, h4, h5, h1').first().text().trim();
-      const image = $(el).find('img').attr('src') || '';
-      const priceText = $(el).text().match(/\d+\s*(ريال|SAR)/i);
-      const price = priceText ? priceText[0].replace(/\s+/g, ' ') : '';
-
-      if (name && productUrl) {
-        products.push({
-          name,
-          url: productUrl,
-          price,
-          image
-        });
-      }
+    // استخراج المنتجات من الصفحة
+    const products = await page.evaluate(() => {
+      const cards = document.querySelectorAll('.product-card-wrapper');
+      const data = [];
+      cards.forEach(card => {
+        const name = card.querySelector('.product-title a')?.innerText?.trim();
+        const price = card.querySelector('.product-price')?.innerText?.trim();
+        const url = card.querySelector('a')?.href;
+        const image = card.querySelector('img')?.src;
+        if (name) {
+          data.push({ name, price, url, image });
+        }
+      });
+      return data;
     });
 
-    return res.status(200).json({ products });
+    await browser.close();
+    return res.status(200).json({ store: url, products });
 
   } catch (err) {
-    console.error('❌ Error scraping homepage:', err);
+    console.error('❌ Scraper error:', err.message);
     return res.status(500).json({ error: err.message });
   }
-}
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Scraper running on port ${PORT}`));
