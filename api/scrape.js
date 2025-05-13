@@ -1,60 +1,41 @@
 // api/scrape.js
-const axios   = require('axios');
+const chrome = require('chrome-aws-lambda');
+const puppeteer = require('puppeteer-core');
 const cheerio = require('cheerio');
 
 module.exports = async (req, res) => {
   const url = req.query.url;
-  if (!url) {
-    return res.status(400).json({
-      success: false,
-      message: '❌ مرّر رابط المتجر عبر ?url='
-    });
-  }
+  if (!url) return res.status(400).json({ success:false, message:'مرّر ?url=' });
 
+  let browser;
   try {
-    // 1) جلب صفحة المتجر
-    const { data } = await axios.get(url);
-    const $ = cheerio.load(data);
+    browser = await puppeteer.launch({
+      args: chrome.args,
+      executablePath: await chrome.executablePath,
+      headless: true,
+    });
+    const page = await browser.newPage();
+    await page.goto(url, { waitUntil: 'networkidle2' });
+    // إذا عندك الكثير من الـ AJAX ممكن تنتظر زيادة
+    await page.waitForTimeout(2000);
 
-    // 2) بيانات عامة
-    const storefront    = url;
-    const pageTitle     = $('title').text().trim();
-    const pageDesc      = $('meta[name="description"]').attr('content')?.trim() || '';
-
-    // 3) اسم / وصف / سعر المنتج
-    const productName   = $('h1.text-store-text-primary').first().text().trim();
-    const productDesc   = $('.product-single-top-description article').first().text().trim();
-    const productPrice  = $('h2.text-store-text-primary').first().text().trim();
-
-    // 4) تصنيفات breadcrumb (لو موجودة)
-    const categories = $('nav.breadcrumb a')
-      .map((i, el) => $(el).text().trim())
-      .get();
-
-    // 5) جهّز المخرجات
+    const html = await page.content();
+    const $ = cheerio.load(html);
     const products = [];
-    if (productName) {
-      products.push({
-        name:        productName,
-        description: productDesc,
-        price:       productPrice
-      });
-    }
 
-    res.json({
-      success:     true,
-      storefront,              // رابط المتجر
-      pageTitle,               // عنوان الصفحة
-      pageDesc,                // ميتا الوصف
-      categories,              // مصفوفة تصنيفات (إذا فيه)
-      count:       products.length,
-      products                  // مصفوفة المنتجات (واحد هنا)
+    // عدّل الـ selectors حسب اللي بالموقع
+    $('.product-single-item, .product-item').each((i, el) => {
+      const name = $(el).find('h1.text-xl, h2.product-title').text().trim();
+      const desc = $(el).find('.product-single-top-description article').text().trim();
+      const price = $(el).find('h2.text-store-text-primary, .sicon-sar').parent().text().trim();
+      if (name) products.push({ name, desc, price });
     });
 
-  } catch (err) {
-    res.status(500).json({
-      success: false,
-      message: `⚠️ خطأ خلال السحب: ${err.message}`
-    });
+    await browser.close();
+    return res.json({ success:true, count:products.length, products });
+
+  } catch (e) {
+    if (browser) await browser.close();
+    return res.status(500).json({ success:false, message:e.message });
   }
 };
