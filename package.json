@@ -1,16 +1,12 @@
-
 {
   "name": "sahab-scraper",
   "version": "1.0.0",
-  "description": "Simple web scraper for Sahab AI Agent",
   "main": "scrape.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node scrape.js"
   },
   "dependencies": {
-    "chrome-aws-lambda": "^10.1.0",
-    "puppeteer-core": "^10.1.0",
-    "cheerio": "^1.0.0-rc.12",
-    "axios": "^1.0.0"
+    "axios": "^1.0.0",
+    "cheerio": "^1.0.0-rc.12"
   }
 }
