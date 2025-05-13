@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "chrome-aws-lambda": "^10.1.0",
-    "puppeteer-core": "^20.0.0",
-    "cheerio": "^1.0.0-rc.12"
+    "puppeteer-core": "^10.1.0",
+    "cheerio": "^1.0.0-rc.12",
+    "axios": "^1.0.0"
   }
 }
