@@ -1,68 +1,113 @@
 // api/scrape.js
-const axios   = require('axios');
+const axios = require('axios');
 const cheerio = require('cheerio');
 
 module.exports = async (req, res) => {
-  const storefront = req.query.url;
-  if (!storefront) {
-    return res
-      .status(400)
-      .json({ success: false, message: '❌ رجاءً مرّر رابط المتجر عبر ?url=' });
+  // رابط المتجر يمرر بـ ?url= (أو ?s= كبديل)
+  const url = req.query.url || req.query.s;
+  if (!url) {
+    return res.status(400).json({
+      success: false,
+      message: 'يرجى تمرير رابط المتجر عبر ?url='
+    });
   }
 
   try {
-    // جلب الـ HTML
-    const { data: html } = await axios.get(storefront);
+    // 1) نجلب HTML
+    const { data: html } = await axios.get(url, { timeout: 10000 });
     const $ = cheerio.load(html);
 
-    // 1) حاول تجيب JSON-LD للمنتجات
     let products = [];
-    $('script[type="application/ld+json"]').each((i, el) => {
+
+    // 2) نحاول نقرأ JSON-LD أولاً
+    $('script[type="application/ld+json"]').each((_, el) => {
       try {
-        const obj = JSON.parse($(el).contents().text());
-        // إذا هو مصفوفة
-        const items = Array.isArray(obj) ? obj : [obj];
-        items.forEach(item => {
+        const json = JSON.parse($(el).html().trim());
+        const entries = Array.isArray(json) ? json : (json['@graph'] || [json]);
+        entries.forEach(item => {
           if (item['@type'] === 'Product') {
-            products.push({
-              name:        item.name || '',
-              description: item.description || '',
-              price:       item.offers?.price || '',
-              currency:    item.offers?.priceCurrency || '',
-              img:         Array.isArray(item.image) ? item.image[0] : item.image || '',
-              url:         item.url || storefront
-            });
+            products.push(parseProductLD(item));
           }
         });
       } catch (e) {
-        // إذا فشل JSON.parse نتجاهل
+        // تجاهل JSON غير صالح
       }
     });
 
-    // 2) لو ما لقينا شيء في LD-JSON، ننقّب في الـ DOM
+    // 3) إذا لم نجد منتجات في JSON-LD، ننزل على الكلاسات مباشرة
     if (products.length === 0) {
-      // مثال بسيط للـ selectors في Salla
-      $('.salla-product-card').each((i, el) => {
-        if (products.length >= 20) return false; // حد أقصى
-        const name  = $(el).find('.product-card__name').text().trim();
-        const desc  = $(el).find('.product-card__excerpt').text().trim();
-        const price = $(el).find('.product-card__price').text().trim();
-        const img   = $(el).find('img').attr('src') || '';
-        const url   = new URL($(el).find('a').attr('href'), storefront).href;
-        products.push({ name, desc, price, img, url });
+      $('.product-single-top-description').each((_, card) => {
+        const $card = $(card);
+        const name = $card
+          .siblings('h1.text-xl, h1.text-store-text-primary')
+          .first()
+          .text()
+          .trim();
+        const description = $card.find('article').text().trim();
+        const price = $card
+          .siblings('h2.text-store-text-primary')
+          .first()
+          .text()
+          .trim();
+        const img = $card
+          .closest('.product')
+          .find('img')
+          .first()
+          .attr('src') || '';
+        if (name) {
+          products.push({
+            name,
+            description,
+            price,
+            image: img
+          });
+        }
       });
     }
 
+    // 4) نزيل التكرار (حسب الاسم أو الـ URL)
+    products = dedupe(products);
+
     return res.status(200).json({
-      success:    true,
-      storefront,
-      count:      products.length,
+      success: true,
+      storefront: url,
+      count: products.length,
       products
     });
-
-  } catch (err) {
-    return res
-      .status(500)
-      .json({ success: false, message: `خطأ في جلب أو تحليل المتجر: ${err.message}` });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: `خطأ أثناء جلب أو تحليل البيانات: ${error.message}`
+    });
   }
 };
+
+/**
+ * يحول عنصر JSON-LD إلى كائن منتج مبسط
+ */
+function parseProductLD(item) {
+  const offer = item.offers || {};
+  return {
+    id: item.sku || item['@id'] || '',
+    name: item.name || '',
+    description: item.description || '',
+    price: offer.price || '',
+    priceCurrency: offer.priceCurrency || '',
+    url: offer.url || item.url || '',
+    image: Array.isArray(item.image) ? item.image : (item.image ? [item.image] : []),
+    category: item.category || ''
+  };
+}
+
+/**
+ * يزيل المنتجات المكررة (حسب الاسم أو الرابط)
+ */
+function dedupe(arr) {
+  const seen = new Set();
+  return arr.filter(p => {
+    const key = (p.name || p.url || '').trim();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
