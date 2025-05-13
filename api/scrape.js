@@ -11,44 +11,29 @@ export default async function handler(req, res) {
     });
     const $ = cheerio.load(html);
 
-    // نفلتر كل سكربتات الـ JSON-LD ونشوف اول واحد فيه ItemList
-    let itemList = null;
-    $('script[type="application/ld+json"]').each((_, el) => {
-      if (itemList) return;
-      try {
-        const obj = JSON.parse($(el).contents().text());
-        // لو هو Array أو فيه @graph
-        const list = Array.isArray(obj) ? obj 
-                   : obj['@graph']   ? obj['@graph'] 
-                   : [obj];
-        for (const o of list) {
-          if (o['@type'] === 'ItemList' && Array.isArray(o.itemListElement)) {
-            itemList = o;
-            break;
-          }
-        }
-      } catch (e) { /* parse error */ }
+    const products = [];
+
+    $('a[href*="/p"]').each((i, el) => {
+      const productUrl = 'https://khairatlaziza.com' + $(el).attr('href');
+      const name = $(el).find('h2, h3, h4, h5, h1').first().text().trim();
+      const image = $(el).find('img').attr('src') || '';
+      const priceText = $(el).text().match(/\d+\s*(ريال|SAR)/i);
+      const price = priceText ? priceText[0].replace(/\s+/g, ' ') : '';
+
+      if (name && productUrl) {
+        products.push({
+          name,
+          url: productUrl,
+          price,
+          image
+        });
+      }
     });
-
-    if (!itemList) {
-      // ما لقينا ItemList، رجّع فاضية
-      return res.status(200).json({ products: [] });
-    }
-
-    const products = itemList.itemListElement.map(({ item: p }) => ({
-      name:        p.name        || '',
-      description: p.description || '',
-      price:       p.offers?.price
-                      ? `${p.offers.price} ${p.offers.priceCurrency||''}`.trim()
-                      : '',
-      url:         p.url         || '',
-      image:       p.image       || ''
-    }));
 
     return res.status(200).json({ products });
 
   } catch (err) {
-    console.error('Error scraping:', err);
+    console.error('❌ Error scraping homepage:', err);
     return res.status(500).json({ error: err.message });
   }
 }
