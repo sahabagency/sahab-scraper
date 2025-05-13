@@ -1,4 +1,3 @@
-// api/scrape.js
 
 import { load } from 'cheerio';
 
