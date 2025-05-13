@@ -1,4 +1,4 @@
-// scrape.js
+// api/scrape.js
 const axios = require('axios');
 const cheerio = require('cheerio');
 
@@ -11,48 +11,31 @@ module.exports = async (req, res) => {
   }
 
   try {
-    // 1. جلب صفحة المتجر الرئيسية
+    // 1) جلب الصفحة الرئيسية
     const { data: html } = await axios.get(storefront);
     const $ = cheerio.load(html);
 
-    // 2. استخراج أول 10 روابط لصفحات المنتجات
+    // 2) اجمع أول 10 روابط للمنتجات
     const productLinks = [];
-    // هذا السِلِكتر خاص بمنصة سلة؛ قد تحتاج تضيف أو تغيّره حسب السمة الفعلية
     $('a.card__link[href]').each((_, el) => {
       if (productLinks.length >= 10) return false;
       const href = $(el).attr('href');
-      const absolute = new URL(href, storefront).href;
-      productLinks.push(absolute);
+      productLinks.push(new URL(href, storefront).href);
     });
 
-    // 3. لكل رابط منتج: جلب التفاصيل
+    // 3) لكل رابط منتج: احصل على العنوان والوصف والسعر
     const products = [];
     for (let link of productLinks) {
       const { data: prodHtml } = await axios.get(link);
       const $$ = cheerio.load(prodHtml);
 
-      const title = $$(
-        'h1.text-xl.md\\:text-2xl.leading-10.font-bold.text-store-text-primary'
-      )
-        .text()
-        .trim();
+      const title = $$('h1.text-xl.md\\:text-2xl.leading-10.font-bold.text-store-text-primary')
+        .text().trim();
+      const description = $$('div.product-single-top-description').text().trim();
+      const price = $$('h2.text-store-text-primary.font-bold.text-xl.inline-block')
+        .text().trim();
 
-      const description = $$('div.product-single-top-description')
-        .text()
-        .trim();
-
-      const price = $$(
-        'h2.text-store-text-primary.font-bold.text-xl.inline-block'
-      )
-        .text()
-        .trim();
-
-      products.push({
-        title,
-        description,
-        price,
-        url: link
-      });
+      products.push({ title, description, price, url: link });
     }
 
     return res.json({
