@@ -1,71 +1,54 @@
-
-import { load } from 'cheerio';
+import axios from 'axios';
+import cheerio from 'cheerio';
 
 export default async function handler(req, res) {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'Missing url parameter' });
 
   try {
-    // 1) جلب الصفحة
-    const response = await fetch(url, {
-      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' }
+    const { data: html } = await axios.get(url, {
+      headers: { 'User-Agent': 'Mozilla/5.0' }
     });
-    if (!response.ok) {
-      return res
-        .status(response.status)
-        .json({ error: `Failed to fetch URL: ${response.status}` });
-    }
-    const html = await response.text();
+    const $ = cheerio.load(html);
 
-    // 2) تحميل الـ HTML عبر cheerio
-    const $ = load(html);
-
-    // 3) دور على كل سكربت application/ld+json
+    // نفلتر كل سكربتات الـ JSON-LD ونشوف اول واحد فيه ItemList
     let itemList = null;
-    $('script[type="application/ld+json"]').each((i, el) => {
-      if (itemList) return; // إذا لقيناه خلاص
+    $('script[type="application/ld+json"]').each((_, el) => {
+      if (itemList) return;
       try {
-        const txt = $(el).html().trim();
-        if (!txt) return;
-        const parsed = JSON.parse(txt);
-        // لو العنصر مبسط أو مصفوفة
-        if (Array.isArray(parsed)) {
-          parsed.forEach(obj => {
-            if (obj['@type'] === 'ItemList' && Array.isArray(obj.itemListElement)) {
-              itemList = obj;
-            }
-          });
-        } else if (parsed['@type'] === 'ItemList' && Array.isArray(parsed.itemListElement)) {
-          itemList = parsed;
+        const obj = JSON.parse($(el).contents().text());
+        // لو هو Array أو فيه @graph
+        const list = Array.isArray(obj) ? obj 
+                   : obj['@graph']   ? obj['@graph'] 
+                   : [obj];
+        for (const o of list) {
+          if (o['@type'] === 'ItemList' && Array.isArray(o.itemListElement)) {
+            itemList = o;
+            break;
+          }
         }
-      } catch (e) {
-        // تخطى لو فيه JSON خطأ
-      }
+      } catch (e) { /* parse error */ }
     });
 
     if (!itemList) {
-      // ما لقينا ItemList
+      // ما لقينا ItemList، رجّع فاضية
       return res.status(200).json({ products: [] });
     }
 
-    // 4) استخرج المنتجات
-    const products = itemList.itemListElement.map(elem => {
-      const p = elem.item || {};
-      return {
-        name:        p.name        || '',
-        description: p.description || '',
-        price:       p.offers?.price
-                      ? `${p.offers.price} ${p.offers.priceCurrency || ''}`.trim()
+    const products = itemList.itemListElement.map(({ item: p }) => ({
+      name:        p.name        || '',
+      description: p.description || '',
+      price:       p.offers?.price
+                      ? `${p.offers.price} ${p.offers.priceCurrency||''}`.trim()
                       : '',
-        url:         p.url         || '',
-        image:       p.image       || ''
-      };
-    });
+      url:         p.url         || '',
+      image:       p.image       || ''
+    }));
 
     return res.status(200).json({ products });
 
   } catch (err) {
-    console.error('Error in /api/scrape:', err);
+    console.error('Error scraping:', err);
     return res.status(500).json({ error: err.message });
   }
 }
