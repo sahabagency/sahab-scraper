@@ -1,18 +1,18 @@
 import * as cheerio from 'cheerio';
 
 const signals = [
-  { key: 'hasTitle', label: 'SEO title', weight: 8 },
-  { key: 'hasMetaDescription', label: 'Meta description', weight: 8 },
-  { key: 'hasViewport', label: 'Mobile viewport', weight: 8 },
-  { key: 'hasPrimaryCta', label: 'Primary CTA', weight: 14 },
-  { key: 'hasBooking', label: 'Booking / appointment path', weight: 14 },
-  { key: 'hasPhoneOrWhatsApp', label: 'Phone / WhatsApp contact', weight: 10 },
-  { key: 'hasAnalytics', label: 'Analytics tracking', weight: 8 },
-  { key: 'hasMetaPixel', label: 'Meta Pixel', weight: 8 },
-  { key: 'hasInstagram', label: 'Instagram link', weight: 6 },
-  { key: 'hasFacebook', label: 'Facebook link', weight: 4 },
-  { key: 'usesHttps', label: 'HTTPS', weight: 6 },
-  { key: 'loads', label: 'Website reachable', weight: 6 }
+  { key: 'hasTitle', label: 'SEO title', weight: 8, service: 'SEO & Search Visibility' },
+  { key: 'hasMetaDescription', label: 'Meta description', weight: 8, service: 'SEO & Search Visibility' },
+  { key: 'hasViewport', label: 'Mobile viewport', weight: 8, service: 'Website Experience' },
+  { key: 'hasPrimaryCta', label: 'Primary CTA', weight: 14, service: 'Conversion & Landing Experience' },
+  { key: 'hasBooking', label: 'Booking / appointment path', weight: 14, service: 'Conversion & Booking' },
+  { key: 'hasPhoneOrWhatsApp', label: 'Phone / WhatsApp contact', weight: 10, service: 'Lead Capture' },
+  { key: 'hasAnalytics', label: 'Analytics tracking', weight: 8, service: 'Analytics & Attribution' },
+  { key: 'hasMetaPixel', label: 'Meta Pixel', weight: 8, service: 'Paid Ads Tracking' },
+  { key: 'hasInstagram', label: 'Instagram link', weight: 6, service: 'Social Presence' },
+  { key: 'hasFacebook', label: 'Facebook link', weight: 4, service: 'Social Presence' },
+  { key: 'usesHttps', label: 'HTTPS', weight: 6, service: 'Website Trust & Technical' },
+  { key: 'loads', label: 'Website reachable', weight: 6, service: 'Website Trust & Technical' }
 ];
 
 function containsAny(text, words) {
@@ -32,8 +32,37 @@ function opportunityEstimate(score, assumptions = {}) {
     monthlyRange: { low, high },
     annualRange: { low: low * 12, high: high * 12 },
     assumptions: { averageTicket, monthlyLeadEstimate },
-    disclaimer: 'Opportunity estimate, not a verified loss figure. It is derived from stated commercial assumptions and observable conversion gaps.'
+    disclaimer: 'Estimated missed opportunity, not verified lost revenue. Derived from public evidence and stated commercial assumptions.'
   };
+}
+
+function buildServiceBreakdown(issues, opportunity) {
+  const annual = opportunity?.annualRange || { low: 0, high: 0 };
+  const grouped = new Map();
+  let totalWeight = 0;
+
+  for (const issue of issues || []) {
+    const signal = signals.find(s => issue.signalKey === s.key);
+    const service = signal?.service || issue.service || 'Digital Growth';
+    const weight = signal?.weight || 5;
+    totalWeight += weight;
+    if (!grouped.has(service)) grouped.set(service, { service, weight: 0, issues: [] });
+    const entry = grouped.get(service);
+    entry.weight += weight;
+    entry.issues.push(issue.title.replace('Missing or weak: ', ''));
+  }
+
+  if (!grouped.size || !totalWeight) return [];
+  return [...grouped.values()]
+    .map(entry => ({
+      service: entry.service,
+      issues: entry.issues,
+      annualRange: {
+        low: Math.round(annual.low * (entry.weight / totalWeight)),
+        high: Math.round(annual.high * (entry.weight / totalWeight))
+      }
+    }))
+    .sort((a, b) => b.annualRange.high - a.annualRange.high);
 }
 
 export async function auditLead(lead, assumptions = {}) {
@@ -45,12 +74,18 @@ export async function auditLead(lead, assumptions = {}) {
     issues: [],
     wins: [],
     opportunity: null,
+    opportunityBreakdown: [],
     evidence: {}
   };
 
   if (!lead.website) {
-    result.issues.push({ severity: 'high', title: 'No website found', detail: 'Google Places did not return a website for this business.' });
+    result.issues.push({ severity: 'high', title: 'No website found', detail: 'Google Places did not return a website for this business.', service: 'Website & Conversion' });
     result.opportunity = opportunityEstimate(20, assumptions);
+    result.opportunityBreakdown = [{
+      service: 'Website & Conversion',
+      issues: ['No website found'],
+      annualRange: result.opportunity.annualRange
+    }];
     return result;
   }
 
@@ -64,9 +99,14 @@ export async function auditLead(lead, assumptions = {}) {
     });
     html = await response.text();
   } catch (error) {
-    result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message });
+    result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical' });
     result.signals.loads = false;
     result.opportunity = opportunityEstimate(10, assumptions);
+    result.opportunityBreakdown = [{
+      service: 'Website Trust & Technical',
+      issues: ['Website could not be loaded'],
+      annualRange: result.opportunity.annualRange
+    }];
     return result;
   }
 
@@ -99,12 +139,13 @@ export async function auditLead(lead, assumptions = {}) {
       result.wins.push(signal.label);
     } else {
       const severity = signal.weight >= 14 ? 'high' : signal.weight >= 8 ? 'medium' : 'low';
-      result.issues.push({ severity, title: `Missing or weak: ${signal.label}`, detail: `Audit did not detect ${signal.label.toLowerCase()} on the public website.` });
+      result.issues.push({ severity, signalKey: signal.key, service: signal.service, title: `Missing or weak: ${signal.label}`, detail: `Audit did not detect ${signal.label.toLowerCase()} on the public website.` });
     }
   }
 
   result.score = Math.min(100, score);
   result.opportunity = opportunityEstimate(result.score, assumptions);
+  result.opportunityBreakdown = buildServiceBreakdown(result.issues, result.opportunity);
   result.evidence = {
     finalUrl: response.url,
     status: response.status,
