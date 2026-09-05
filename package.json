@@ -1,15 +1,18 @@
 {
-  "name": "sahab-scraper",
-  "version": "1.0.0",
+  "name": "sahab-xray-lead-engine",
+  "version": "0.1.0",
+  "private": true,
   "type": "module",
-  "main": "scraper.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node scraper.js"
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "dependencies": {
-    "axios": "^1.0.0",
+    "cheerio": "^1.0.0",
     "cors": "^2.8.5",
-    "express": "^4.18.2",
-    "puppeteer": "^21.3.8"
+    "express": "^4.21.2"
   }
 }
