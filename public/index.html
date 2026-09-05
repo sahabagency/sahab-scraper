@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Sahab X-Ray Lead Engine</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">SAHAB AGENCY</p>
+        <h1>X-Ray Lead Engine</h1>
+        <p>Discover businesses, audit revenue-conversion gaps, and generate personalized outreach with your booking link.</p>
+      </div>
+      <div id="config" class="status-card">Checking integrations…</div>
+    </section>
+
+    <section class="panel">
+      <h2>New campaign</h2>
+      <form id="campaign-form" class="grid">
+        <label>Campaign name<input name="name" placeholder="Riyadh Clinics — Sep" /></label>
+        <label>Industry<input name="industry" placeholder="Aesthetic clinics" required /></label>
+        <label>Location<input name="location" placeholder="Riyadh, Saudi Arabia" required /></label>
+        <label>Lead count<input name="limit" type="number" value="10" min="1" max="60" /></label>
+        <label>Average ticket<input name="averageTicket" type="number" value="2500" min="1" /></label>
+        <label>Estimated monthly leads<input name="monthlyLeadEstimate" type="number" value="40" min="1" /></label>
+        <label class="full">Booking URL<input name="bookingUrl" placeholder="https://calendar.google.com/..." /></label>
+        <button type="submit">Run discovery + audits</button>
+      </form>
+      <p id="run-status" class="muted"></p>
+    </section>
+
+    <section class="panel">
+      <div class="section-head">
+        <h2>Campaign results</h2>
+        <span id="count" class="badge">0 leads</span>
+      </div>
+      <div id="results" class="results empty">Run a campaign to see audited leads.</div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
