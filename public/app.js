@@ -35,24 +35,30 @@ function renderCampaign(campaign) {
     const audit = lead.audit || {};
     const annual = audit.opportunity?.annualRange || { low: 0, high: 0 };
     const issues = (audit.issues || []).slice(0, 4).map(i => `<li><strong>${esc(i.severity)}</strong> — ${esc(i.title)}</li>`).join('');
+    const breakdown = (audit.opportunityBreakdown || []).slice(0, 6).map(item => `<tr><td>${esc(item.service)}</td><td>${money(item.annualRange?.low)}–${money(item.annualRange?.high)}</td><td>${esc((item.issues || []).slice(0, 2).join(', '))}</td></tr>`).join('');
+    const route = lead.contactRoute || {};
+    const destination = route.destination || lead.contactEmail || lead.phone || 'Research required';
     return `<article class="lead-card">
       <div class="lead-top">
         <div>
           <div class="kicker">#${index + 1} · ${esc(lead.address || '')}</div>
           <h3>${esc(lead.name)}</h3>
           <div class="meta">${lead.rating ? `★ ${esc(lead.rating)} (${esc(lead.reviewCount)})` : 'No rating data'} · ${lead.website ? `<a href="${esc(lead.website)}" target="_blank">website</a>` : 'no website'}</div>
+          <div class="meta"><strong>Best contact:</strong> ${esc(route.channel || (lead.contactEmail ? 'email' : 'research_required'))} · ${esc(destination)}</div>
         </div>
         <div class="score"><span>${esc(audit.score ?? 0)}</span>/100</div>
       </div>
       <div class="columns">
         <div>
+          <h4>Estimated missed opportunity</h4>
+          <p class="opportunity"><strong>${money(annual.low)}–${money(annual.high)} / year</strong></p>
+          <table class="breakdown"><thead><tr><th>Area</th><th>Est. annual range</th><th>Evidence</th></tr></thead><tbody>${breakdown || '<tr><td colspan="3">No breakdown available.</td></tr>'}</tbody></table>
           <h4>Top gaps</h4>
           <ul>${issues || '<li>No major issue detected in current checks.</li>'}</ul>
-          <p class="opportunity"><strong>Estimated annual opportunity:</strong> ${money(annual.low)}–${money(annual.high)}</p>
           <p class="fine">Estimate only; based on campaign assumptions and observable gaps, not verified lost revenue.</p>
         </div>
         <div>
-          <h4>Outreach draft</h4>
+          <h4>Exact outreach preview</h4>
           <p><strong>${esc(lead.outreach?.subject || '')}</strong></p>
           <pre>${esc(lead.outreach?.body || '')}</pre>
         </div>
@@ -67,7 +73,7 @@ form.addEventListener('submit', async event => {
   payload.limit = Number(payload.limit);
   payload.averageTicket = Number(payload.averageTicket);
   payload.monthlyLeadEstimate = Number(payload.monthlyLeadEstimate);
-  statusEl.textContent = 'Discovering businesses, auditing websites, and writing outreach…';
+  statusEl.textContent = 'Discovering businesses, enriching contacts, auditing gaps, and writing outreach…';
   form.querySelector('button').disabled = true;
   try {
     const response = await fetch('/api/campaigns', {
