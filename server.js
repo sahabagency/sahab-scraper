@@ -26,6 +26,7 @@ app.get('/api/config', (_req, res) => {
     googlePlacesReady: Boolean(process.env.GOOGLE_MAPS_API_KEY),
     openAiReady: Boolean(process.env.OPENAI_API_KEY),
     bookingUrlReady: Boolean(process.env.CALENDAR_BOOKING_URL),
+    webDiscoveryReady: Boolean(process.env.BRAVE_SEARCH_API_KEY),
     bookingUrl: process.env.CALENDAR_BOOKING_URL || ''
   });
 });
@@ -66,7 +67,7 @@ app.post('/api/campaigns', async (req, res) => {
 
     const audited = [];
     for (const rawLead of rawLeads) {
-      const lead = await enrichLeadContact(rawLead);
+      const lead = await enrichLeadContact(rawLead, { location });
       const audit = await auditLead(lead, {
         averageTicket: campaign.averageTicket,
         monthlyLeadEstimate: campaign.monthlyLeadEstimate
@@ -78,7 +79,7 @@ app.post('/api/campaigns', async (req, res) => {
         industry,
         location
       });
-      audited.push({ ...lead, audit, outreach, status: lead.contactEmail ? 'ready_to_send' : 'needs_contact' });
+      audited.push({ ...lead, audit, outreach, status: lead.contactRoute?.destination ? 'ready_to_send' : 'needs_contact' });
     }
 
     campaign.leads = audited;
@@ -111,13 +112,16 @@ app.get('/api/campaigns/:id', (req, res) => {
 app.post('/api/leads/audit', async (req, res) => {
   try {
     const inputLead = req.body?.lead;
-    if (!inputLead?.website) return res.status(400).json({ error: 'lead.website is required' });
-    const lead = await enrichLeadContact(inputLead);
+    if (!inputLead?.website && !inputLead?.name) return res.status(400).json({ error: 'lead.name or lead.website is required' });
+    const location = req.body?.location || '';
+    const lead = await enrichLeadContact(inputLead, { location });
     const audit = await auditLead(lead, req.body?.assumptions || {});
     const outreach = await buildOutreach({
       lead,
       audit,
-      bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || ''
+      bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '',
+      industry: req.body?.industry || '',
+      location
     });
     res.json({ lead, audit, outreach });
   } catch (error) {
@@ -132,27 +136,32 @@ async function runStartupSelfTest() {
   const startedAt = Date.now();
   try {
     console.log('[SELFTEST] starting Riyadh aesthetic clinics dry-run (no email send)');
-    const leads = await discoverLeads({ industry: 'aesthetic clinics', location: 'Riyadh, Saudi Arabia', limit: 3 });
+    const location = 'Riyadh, Saudi Arabia';
+    const leads = await discoverLeads({ industry: 'aesthetic clinics', location, limit: 3 });
     const results = [];
     for (const rawLead of leads) {
-      const lead = await enrichLeadContact(rawLead);
+      const lead = await enrichLeadContact(rawLead, { location });
       const audit = await auditLead(lead, { averageTicket: 2500, monthlyLeadEstimate: 40 });
       const outreach = await buildOutreach({
         lead,
         audit,
         bookingUrl: process.env.CALENDAR_BOOKING_URL || '',
         industry: 'aesthetic clinics',
-        location: 'Riyadh, Saudi Arabia'
+        location
       });
       results.push({
         name: lead.name,
         website: lead.website || null,
         contactEmail: lead.contactEmail || null,
+        contactRoute: lead.contactRoute || null,
+        discoveryProvider: lead.discovery?.webProvider || null,
         rating: lead.rating || null,
         score: audit.score,
-        issueCount: (audit.issues || []).length,
-        topIssues: (audit.issues || []).slice(0, 3).map(i => i.title),
+        opportunity: audit.opportunity?.annualRange || null,
+        breakdown: audit.opportunityBreakdown || [],
+        generatedBy: outreach.generatedBy || null,
         subject: outreach.subject,
+        bodyPreview: String(outreach.body || '').slice(0, 320),
         bookingLinkIncluded: Boolean(process.env.CALENDAR_BOOKING_URL && outreach.body?.includes(process.env.CALENDAR_BOOKING_URL))
       });
     }
