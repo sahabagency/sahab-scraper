@@ -3,6 +3,7 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { discoverLeads } from './src/discover.js';
+import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
 
@@ -64,7 +65,8 @@ app.post('/api/campaigns', async (req, res) => {
     campaign.status = 'auditing';
 
     const audited = [];
-    for (const lead of rawLeads) {
+    for (const rawLead of rawLeads) {
+      const lead = await enrichLeadContact(rawLead);
       const audit = await auditLead(lead, {
         averageTicket: campaign.averageTicket,
         monthlyLeadEstimate: campaign.monthlyLeadEstimate
@@ -76,7 +78,7 @@ app.post('/api/campaigns', async (req, res) => {
         industry,
         location
       });
-      audited.push({ ...lead, audit, outreach, status: 'ready' });
+      audited.push({ ...lead, audit, outreach, status: lead.contactEmail ? 'ready_to_send' : 'needs_contact' });
     }
 
     campaign.leads = audited;
@@ -108,8 +110,9 @@ app.get('/api/campaigns/:id', (req, res) => {
 
 app.post('/api/leads/audit', async (req, res) => {
   try {
-    const lead = req.body?.lead;
-    if (!lead?.website) return res.status(400).json({ error: 'lead.website is required' });
+    const inputLead = req.body?.lead;
+    if (!inputLead?.website) return res.status(400).json({ error: 'lead.website is required' });
+    const lead = await enrichLeadContact(inputLead);
     const audit = await auditLead(lead, req.body?.assumptions || {});
     const outreach = await buildOutreach({
       lead,
@@ -131,7 +134,8 @@ async function runStartupSelfTest() {
     console.log('[SELFTEST] starting Riyadh aesthetic clinics dry-run (no email send)');
     const leads = await discoverLeads({ industry: 'aesthetic clinics', location: 'Riyadh, Saudi Arabia', limit: 3 });
     const results = [];
-    for (const lead of leads) {
+    for (const rawLead of leads) {
+      const lead = await enrichLeadContact(rawLead);
       const audit = await auditLead(lead, { averageTicket: 2500, monthlyLeadEstimate: 40 });
       const outreach = await buildOutreach({
         lead,
@@ -143,6 +147,7 @@ async function runStartupSelfTest() {
       results.push({
         name: lead.name,
         website: lead.website || null,
+        contactEmail: lead.contactEmail || null,
         rating: lead.rating || null,
         score: audit.score,
         issueCount: (audit.issues || []).length,
