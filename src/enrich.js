@@ -1,3 +1,5 @@
+import { discoverPublicWebContacts } from './webDiscover.js';
+
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const CONTACT_HINTS = ['contact', 'about', 'team', 'booking', 'appointments', 'support', 'reach-us', 'اتصل', 'تواصل'];
 const ROLE_PRIORITY = ['info', 'hello', 'contact', 'sales', 'marketing', 'office', 'admin', 'support', 'bookings', 'appointments'];
@@ -99,64 +101,94 @@ function mergeSocials(target, next) {
   for (const key of Object.keys(target)) if (!target[key] && next?.[key]) target[key] = next[key];
 }
 
-function chooseContactRoute({ email, socials, phone }) {
-  if (email) return { channel: 'email', destination: email, reason: 'Verified public business email found on owned website.' };
-  if (socials.linkedin) return { channel: 'linkedin', destination: socials.linkedin, reason: 'No public email found; LinkedIn business presence available.' };
-  if (socials.instagram) return { channel: 'instagram', destination: socials.instagram, reason: 'No public email found; Instagram business presence available.' };
-  if (socials.whatsapp) return { channel: 'whatsapp', destination: socials.whatsapp, reason: 'No public email found; WhatsApp contact available.' };
-  if (socials.facebook) return { channel: 'facebook', destination: socials.facebook, reason: 'No public email found; Facebook business presence available.' };
-  if (phone) return { channel: 'phone', destination: phone, reason: 'No email/social destination found; Google Places phone is available.' };
-  return { channel: 'research_required', destination: null, reason: 'No reliable direct contact destination found yet.' };
+function mergeWebSocials(target, webSocials) {
+  for (const [key, value] of Object.entries(webSocials || {})) {
+    if (!target[key] && value?.url) target[key] = value.url;
+  }
 }
 
-export async function enrichLeadContact(lead) {
+function chooseContactRoute({ email, emailConfidence = 100, socials, phone, webDiscovery }) {
+  if (email && emailConfidence >= 65) return { channel: 'email', destination: email, confidence: emailConfidence, reason: 'Public business email found with sufficient confidence.' };
+  const socialOrder = ['linkedin', 'instagram', 'whatsapp', 'facebook', 'tiktok', 'x'];
+  for (const channel of socialOrder) {
+    if (!socials[channel]) continue;
+    const confidence = webDiscovery?.socials?.[channel]?.confidence ?? 90;
+    if (confidence >= 60) return { channel, destination: socials[channel], confidence, reason: `No reliable email found; ${channel} business presence available.` };
+  }
+  if (phone) return { channel: 'phone', destination: phone, confidence: 70, reason: 'No reliable email/social destination found; Google Places phone is available.' };
+  return { channel: 'research_required', destination: null, confidence: 0, reason: 'No reliable direct contact destination found yet.' };
+}
+
+export async function enrichLeadContact(lead, { location = '' } = {}) {
   const emptySocials = { instagram: null, facebook: null, linkedin: null, tiktok: null, x: null, whatsapp: null };
-  if (!lead?.website) {
-    const route = chooseContactRoute({ email: null, socials: emptySocials, phone: lead?.phone });
-    return { ...lead, contactEmail: null, contactEmailSource: null, publicEmails: [], socials: emptySocials, contactRoute: route };
-  }
-
-  const root = normalizeWebsite(lead.website);
-  if (!root) {
-    const route = chooseContactRoute({ email: null, socials: emptySocials, phone: lead?.phone });
-    return { ...lead, contactEmail: null, contactEmailSource: null, publicEmails: [], socials: emptySocials, contactRoute: route };
-  }
-
-  const host = new URL(root).host;
-  const pages = [lead.website];
-  const homepage = await fetchHtml(lead.website);
-  const found = [];
   const socials = { ...emptySocials };
+  const found = [];
+  let websiteHost = '';
+  let sourceType = 'none';
 
-  if (homepage) {
-    found.push(...extractEmails(homepage, host).map(x => ({ ...x, source: lead.website })));
-    mergeSocials(socials, extractSocialLinks(homepage, lead.website));
-    pages.push(...extractContactLinks(homepage, lead.website));
+  if (lead?.website) {
+    const root = normalizeWebsite(lead.website);
+    if (root) {
+      websiteHost = new URL(root).host;
+      const pages = [lead.website];
+      const homepage = await fetchHtml(lead.website);
+      if (homepage) {
+        sourceType = 'owned_website';
+        found.push(...extractEmails(homepage, websiteHost).map(x => ({ ...x, source: lead.website, confidence: 95 })));
+        mergeSocials(socials, extractSocialLinks(homepage, lead.website));
+        pages.push(...extractContactLinks(homepage, lead.website));
+      }
+      for (const page of [...new Set(pages)].slice(1, 7)) {
+        const html = await fetchHtml(page);
+        if (!html) continue;
+        found.push(...extractEmails(html, websiteHost).map(x => ({ ...x, source: page, confidence: 95 })));
+        mergeSocials(socials, extractSocialLinks(html, page));
+      }
+    }
   }
 
-  for (const page of [...new Set(pages)].slice(1, 7)) {
-    const html = await fetchHtml(page);
-    if (!html) continue;
-    found.push(...extractEmails(html, host).map(x => ({ ...x, source: page })));
-    mergeSocials(socials, extractSocialLinks(html, page));
+  const hasAnySocial = Object.values(socials).some(Boolean);
+  const needsWebDiscovery = !found.length || !hasAnySocial || !lead?.website;
+  const webDiscovery = needsWebDiscovery
+    ? await discoverPublicWebContacts(lead, { location }).catch(() => ({ provider: 'error', socials: {}, emailCandidates: [], evidence: [] }))
+    : { provider: 'not_needed', socials: {}, emailCandidates: [], evidence: [] };
+
+  mergeWebSocials(socials, webDiscovery.socials);
+  for (const candidate of webDiscovery.emailCandidates || []) {
+    found.push({ email: candidate.email, source: candidate.source, score: 0, confidence: candidate.confidence });
   }
 
   const unique = new Map();
   for (const item of found) {
-    const current = unique.get(item.email);
-    if (!current || item.score > current.score) unique.set(item.email, item);
+    const email = cleanEmail(item.email);
+    const rank = (item.confidence || 0) + (item.score || scoreEmail(email, websiteHost));
+    const current = unique.get(email);
+    if (!current || rank > current.rank) unique.set(email, { ...item, email, rank });
   }
 
-  const ranked = [...unique.values()].sort((a, b) => b.score - a.score);
+  const ranked = [...unique.values()].sort((a, b) => b.rank - a.rank);
   const best = ranked[0] || null;
-  const route = chooseContactRoute({ email: best?.email || null, socials, phone: lead.phone });
+  const route = chooseContactRoute({
+    email: best?.email || null,
+    emailConfidence: best?.confidence ?? (best ? 95 : 0),
+    socials,
+    phone: lead?.phone,
+    webDiscovery
+  });
 
   return {
     ...lead,
     contactEmail: best?.email || null,
+    contactEmailConfidence: best?.confidence ?? (best ? 95 : 0),
     contactEmailSource: best?.source || null,
-    publicEmails: ranked.slice(0, 5).map(({ email, source }) => ({ email, source })),
+    publicEmails: ranked.slice(0, 5).map(({ email, source, confidence }) => ({ email, source, confidence: confidence ?? 95 })),
     socials,
-    contactRoute: route
+    contactRoute: route,
+    discovery: {
+      sourceType,
+      webProvider: webDiscovery.provider,
+      evidence: webDiscovery.evidence || [],
+      socialMatches: webDiscovery.socials || {}
+    }
   };
 }
