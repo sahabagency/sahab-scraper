@@ -1,5 +1,5 @@
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const CONTACT_HINTS = ['contact', 'about', 'team', 'booking', 'appointments', 'support'];
+const CONTACT_HINTS = ['contact', 'about', 'team', 'booking', 'appointments', 'support', 'reach-us', 'اتصل', 'تواصل'];
 const ROLE_PRIORITY = ['info', 'hello', 'contact', 'sales', 'marketing', 'office', 'admin', 'support', 'bookings', 'appointments'];
 
 function normalizeWebsite(url) {
@@ -51,7 +51,26 @@ function extractContactLinks(html, baseUrl) {
       if (absolute.protocol === 'http:' || absolute.protocol === 'https:') links.push(absolute.toString());
     } catch {}
   }
-  return [...new Set(links)].slice(0, 4);
+  return [...new Set(links)].slice(0, 6);
+}
+
+function extractSocialLinks(html, baseUrl) {
+  const socials = { instagram: null, facebook: null, linkedin: null, tiktok: null, x: null, whatsapp: null };
+  const hrefRe = /href=["']([^"']+)["']/gi;
+  let match;
+  while ((match = hrefRe.exec(html))) {
+    const href = match[1];
+    let absolute = href;
+    try { absolute = new URL(href, baseUrl).toString(); } catch {}
+    const lower = absolute.toLowerCase();
+    if (!socials.instagram && lower.includes('instagram.com/')) socials.instagram = absolute;
+    if (!socials.facebook && (lower.includes('facebook.com/') || lower.includes('fb.com/'))) socials.facebook = absolute;
+    if (!socials.linkedin && lower.includes('linkedin.com/')) socials.linkedin = absolute;
+    if (!socials.tiktok && lower.includes('tiktok.com/')) socials.tiktok = absolute;
+    if (!socials.x && (lower.includes('x.com/') || lower.includes('twitter.com/'))) socials.x = absolute;
+    if (!socials.whatsapp && (lower.includes('wa.me/') || lower.includes('api.whatsapp.com/') || lower.includes('whatsapp.com/'))) socials.whatsapp = absolute;
+  }
+  return socials;
 }
 
 async function fetchHtml(url) {
@@ -76,28 +95,50 @@ async function fetchHtml(url) {
   }
 }
 
+function mergeSocials(target, next) {
+  for (const key of Object.keys(target)) if (!target[key] && next?.[key]) target[key] = next[key];
+}
+
+function chooseContactRoute({ email, socials, phone }) {
+  if (email) return { channel: 'email', destination: email, reason: 'Verified public business email found on owned website.' };
+  if (socials.linkedin) return { channel: 'linkedin', destination: socials.linkedin, reason: 'No public email found; LinkedIn business presence available.' };
+  if (socials.instagram) return { channel: 'instagram', destination: socials.instagram, reason: 'No public email found; Instagram business presence available.' };
+  if (socials.whatsapp) return { channel: 'whatsapp', destination: socials.whatsapp, reason: 'No public email found; WhatsApp contact available.' };
+  if (socials.facebook) return { channel: 'facebook', destination: socials.facebook, reason: 'No public email found; Facebook business presence available.' };
+  if (phone) return { channel: 'phone', destination: phone, reason: 'No email/social destination found; Google Places phone is available.' };
+  return { channel: 'research_required', destination: null, reason: 'No reliable direct contact destination found yet.' };
+}
+
 export async function enrichLeadContact(lead) {
+  const emptySocials = { instagram: null, facebook: null, linkedin: null, tiktok: null, x: null, whatsapp: null };
   if (!lead?.website) {
-    return { ...lead, contactEmail: null, contactEmailSource: null, publicEmails: [] };
+    const route = chooseContactRoute({ email: null, socials: emptySocials, phone: lead?.phone });
+    return { ...lead, contactEmail: null, contactEmailSource: null, publicEmails: [], socials: emptySocials, contactRoute: route };
   }
 
   const root = normalizeWebsite(lead.website);
-  if (!root) return { ...lead, contactEmail: null, contactEmailSource: null, publicEmails: [] };
+  if (!root) {
+    const route = chooseContactRoute({ email: null, socials: emptySocials, phone: lead?.phone });
+    return { ...lead, contactEmail: null, contactEmailSource: null, publicEmails: [], socials: emptySocials, contactRoute: route };
+  }
 
   const host = new URL(root).host;
   const pages = [lead.website];
   const homepage = await fetchHtml(lead.website);
   const found = [];
+  const socials = { ...emptySocials };
 
   if (homepage) {
     found.push(...extractEmails(homepage, host).map(x => ({ ...x, source: lead.website })));
+    mergeSocials(socials, extractSocialLinks(homepage, lead.website));
     pages.push(...extractContactLinks(homepage, lead.website));
   }
 
-  for (const page of [...new Set(pages)].slice(1, 5)) {
+  for (const page of [...new Set(pages)].slice(1, 7)) {
     const html = await fetchHtml(page);
     if (!html) continue;
     found.push(...extractEmails(html, host).map(x => ({ ...x, source: page })));
+    mergeSocials(socials, extractSocialLinks(html, page));
   }
 
   const unique = new Map();
@@ -108,11 +149,14 @@ export async function enrichLeadContact(lead) {
 
   const ranked = [...unique.values()].sort((a, b) => b.score - a.score);
   const best = ranked[0] || null;
+  const route = chooseContactRoute({ email: best?.email || null, socials, phone: lead.phone });
 
   return {
     ...lead,
     contactEmail: best?.email || null,
     contactEmailSource: best?.source || null,
-    publicEmails: ranked.slice(0, 5).map(({ email, source }) => ({ email, source }))
+    publicEmails: ranked.slice(0, 5).map(({ email, source }) => ({ email, source })),
+    socials,
+    contactRoute: route
   };
 }
