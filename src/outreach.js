@@ -1,7 +1,8 @@
 function topIssues(audit) {
+  const severity = { high: 3, medium: 2, low: 1 };
   return (audit.issues || [])
     .slice()
-    .sort((a, b) => ({ high: 3, medium: 2, low: 1 }[b.severity] - ({ high: 3, medium: 2, low: 1 }[a.severity]))
+    .sort((a, b) => (severity[b.severity] || 0) - (severity[a.severity] || 0))
     .slice(0, 3)
     .map(issue => issue.title.replace('Missing or weak: ', ''));
 }
@@ -44,8 +45,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
           bookingUrl
         })
       }
-    ],
-    text: { format: { type: 'json_object' } }
+    ]
   };
 
   const response = await fetch('https://api.openai.com/v1/responses', {
@@ -63,8 +63,9 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
   const text = data.output_text || data.output?.flatMap(x => x.content || []).find(x => x.type === 'output_text')?.text;
   if (!text) return null;
 
+  const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
   try {
-    const parsed = JSON.parse(text);
+    const parsed = JSON.parse(cleaned);
     if (!parsed.subject || !parsed.body) return null;
     return { subject: parsed.subject, body: parsed.body, channel: 'email', generatedBy: 'openai' };
   } catch {
