@@ -7,17 +7,45 @@ function topIssues(audit) {
     .map(issue => issue.title.replace('Missing or weak: ', ''));
 }
 
+function issueSentence(issues) {
+  if (!issues.length) return 'I found a few conversion and discoverability gaps worth reviewing.';
+  if (issues.length === 1) return `The clearest gap I found is ${issues[0]}.`;
+  return `The clearest gaps I found are ${issues.slice(0, -1).join(', ')} and ${issues.at(-1)}.`;
+}
+
+function businessContext(lead, audit) {
+  if (!lead.website) {
+    return `I found ${lead.name} through Google and noticed there is no public website attached to the business profile. That can make it harder to capture high-intent searches and move prospects into a clear booking path.`;
+  }
+  const title = audit.evidence?.title;
+  return title
+    ? `I reviewed ${lead.name}'s public website (${title}) and your Google presence.`
+    : `I reviewed ${lead.name}'s public website and Google presence.`;
+}
+
+function safeOpportunity(audit) {
+  const range = audit.opportunity?.annualRange;
+  if (!range || (!range.low && !range.high)) return '';
+  return `Using a conservative model based on the visible funnel gaps, average ticket and lead-volume assumptions, the improvement opportunity could be around ${range.low.toLocaleString()}–${range.high.toLocaleString()} per year. This is an estimate, not a verified loss figure.`;
+}
+
 function fallbackMessage({ lead, audit, bookingUrl }) {
   const issues = topIssues(audit);
-  const range = audit.opportunity?.annualRange;
-  const opportunity = range
-    ? `Based on a conservative model, the visible gaps may represent roughly ${range.low.toLocaleString()}–${range.high.toLocaleString()} in annual opportunity under the assumptions used.`
-    : '';
+  const route = lead.contactRoute || { channel: lead.contactEmail ? 'email' : 'research_required', destination: lead.contactEmail || null };
+  const context = businessContext(lead, audit);
+  const gapLine = issueSentence(issues);
+  const opportunity = safeOpportunity(audit);
+
+  const body = `Hi ${lead.name} team,\n\n${context}\n\n${gapLine}${opportunity ? `\n\n${opportunity}` : ''}\n\nI’m not reaching out with a generic marketing package. I already have the audit findings and can show you exactly what I would fix first and why.\n\n${bookingUrl ? `If useful, you can pick a time here: ${bookingUrl}\n\n` : ''}Best,\nMohammed\nSahab Agency`;
 
   return {
-    subject: `Quick growth audit for ${lead.name}`,
-    body: `Hi ${lead.name} team,\n\nI reviewed your public digital presence and found a few conversion gaps worth fixing: ${issues.join(', ') || 'a few measurable funnel issues'}.\n\n${opportunity}\n\nI’m not sending a generic sales pitch — I can walk you through the exact findings and what I’d fix first in a short call.\n\n${bookingUrl ? `Book a time here: ${bookingUrl}\n\n` : ''}Best,\nSahab Agency`,
-    channel: 'email'
+    subject: `${lead.name}: quick growth audit`,
+    body,
+    channel: route.channel === 'research_required' ? 'email' : route.channel,
+    destination: route.destination || lead.contactEmail || null,
+    generatedBy: 'rules',
+    evidenceUsed: issues,
+    requiresReview: true
   };
 }
 
@@ -30,17 +58,22 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
     input: [
       {
         role: 'system',
-        content: 'You write concise B2B outbound email. Be factual, specific, calm, and non-spammy. Never claim verified revenue loss unless the evidence proves it. If using an estimate, clearly label it as an estimate based on assumptions. Output JSON with subject and body only.'
+        content: 'Write a concise B2B outbound message for a marketing agency. Use only the provided public evidence. Do not invent facts, traffic, revenue, ad spend, rankings, or losses. If an opportunity range is present, explicitly label it as an estimate based on assumptions. The opening must prove we actually reviewed the business. Avoid generic praise and spammy language. Aim for 90-150 words. Output valid JSON with subject and body only.'
       },
       {
         role: 'user',
         content: JSON.stringify({
           business: lead.name,
           website: lead.website,
+          googleRating: lead.rating,
+          reviewCount: lead.reviewCount,
           industry,
           location,
+          contactRoute: lead.contactRoute,
+          socials: lead.socials,
           auditScore: audit.score,
           issues: topIssues(audit),
+          evidence: audit.evidence,
           opportunityEstimate: audit.opportunity,
           bookingUrl
         })
@@ -67,7 +100,15 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
   try {
     const parsed = JSON.parse(cleaned);
     if (!parsed.subject || !parsed.body) return null;
-    return { subject: parsed.subject, body: parsed.body, channel: 'email', generatedBy: 'openai' };
+    return {
+      subject: parsed.subject,
+      body: parsed.body,
+      channel: lead.contactRoute?.channel || (lead.contactEmail ? 'email' : 'research_required'),
+      destination: lead.contactRoute?.destination || lead.contactEmail || null,
+      generatedBy: 'openai',
+      evidenceUsed: topIssues(audit),
+      requiresReview: true
+    };
   } catch {
     return null;
   }
