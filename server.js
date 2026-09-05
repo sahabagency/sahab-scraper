@@ -124,5 +124,41 @@ app.post('/api/leads/audit', async (req, res) => {
 
 app.get('*', (_req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
+async function runStartupSelfTest() {
+  if (process.env.RUN_SELF_TEST !== '1') return;
+  const startedAt = Date.now();
+  try {
+    console.log('[SELFTEST] starting Riyadh aesthetic clinics dry-run (no email send)');
+    const leads = await discoverLeads({ industry: 'aesthetic clinics', location: 'Riyadh, Saudi Arabia', limit: 3 });
+    const results = [];
+    for (const lead of leads) {
+      const audit = await auditLead(lead, { averageTicket: 2500, monthlyLeadEstimate: 40 });
+      const outreach = await buildOutreach({
+        lead,
+        audit,
+        bookingUrl: process.env.CALENDAR_BOOKING_URL || '',
+        industry: 'aesthetic clinics',
+        location: 'Riyadh, Saudi Arabia'
+      });
+      results.push({
+        name: lead.name,
+        website: lead.website || null,
+        rating: lead.rating || null,
+        score: audit.score,
+        issueCount: (audit.issues || []).length,
+        topIssues: (audit.issues || []).slice(0, 3).map(i => i.title),
+        subject: outreach.subject,
+        bookingLinkIncluded: Boolean(process.env.CALENDAR_BOOKING_URL && outreach.body?.includes(process.env.CALENDAR_BOOKING_URL))
+      });
+    }
+    console.log('[SELFTEST] SUCCESS ' + JSON.stringify({ count: results.length, durationMs: Date.now() - startedAt, results }));
+  } catch (error) {
+    console.error('[SELFTEST] FAILED ' + JSON.stringify({ durationMs: Date.now() - startedAt, error: error?.message || String(error), stack: error?.stack }));
+  }
+}
+
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Sahab X-Ray Lead Engine listening on :${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Sahab X-Ray Lead Engine listening on :${PORT}`);
+  runStartupSelfTest();
+});
