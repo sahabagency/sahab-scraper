@@ -4,7 +4,7 @@ function topIssues(audit) {
     .slice()
     .sort((a, b) => (severity[b.severity] || 0) - (severity[a.severity] || 0))
     .slice(0, 3)
-    .map(issue => issue.title.replace('Missing or weak: ', ''));
+    .map(issue => issue.title.replace('Missing or weak: ', '').replace('Not detected publicly: ', ''));
 }
 
 function money(n) {
@@ -13,13 +13,13 @@ function money(n) {
 
 function issueSentence(issues) {
   if (!issues.length) return 'لقيت عدة فجوات تستحق المراجعة في مسار التحويل والظهور الرقمي.';
-  if (issues.length === 1) return `أوضح فجوة ظهرت لي هي: ${issues[0]}.`;
-  return `أوضح الفجوات اللي ظهرت لي: ${issues.join('، ')}.`;
+  if (issues.length === 1) return `أوضح نقطة ظهرت لي في الفحص العام: ${issues[0]}.`;
+  return `أوضح النقاط اللي ظهرت لي في الفحص العام: ${issues.join('، ')}.`;
 }
 
 function businessContext(lead, audit) {
   if (!lead.website) {
-    return `وصلت لـ ${lead.name} من Google، ولاحظت إن ملف النشاط ما عنده موقع واضح مرتبط فيه. هذا يخلي جزء من العملاء أصحاب النية العالية ما يلقون مسار مباشر للخدمات والحجز.`;
+    return `وصلت لـ ${lead.name} من Google، وما قدرت أتحقق من موقع رسمي مستقل للنشاط ضمن المصادر العامة الحالية. لذلك الجزء الخاص بالموقع عندي تقديري محافظ، مو Audit كامل.`;
   }
   const title = audit.evidence?.title;
   return title
@@ -46,16 +46,17 @@ function fallbackMessage({ lead, audit, bookingUrl }) {
   const gapLine = issueSentence(issues);
   const annual = audit.opportunity?.annualRange || { low: 0, high: 0 };
   const breakdown = buildBreakdownLines(audit);
+  const confidence = audit.opportunity?.confidence;
 
   const headline = annual.high > 0
-    ? `بناءً على المراجعة، قد تكون عندكم فرصة إيراد ضائعة تقديريًا بين ${money(annual.low)} و${money(annual.high)} سنويًا.`
+    ? `بناءً على المراجعة، قد تكون عندكم فرصة تحسين تقديرية بين ${money(annual.low)} و${money(annual.high)} ريال سنويًا${confidence ? ` بدرجة ثقة ${confidence}%` : ''}.`
     : '';
 
-  const body = `مرحبًا فريق ${lead.name}\n\n${context}\n\n${gapLine}\n\n${headline}${breakdown.length ? `\n\nالتفصيل حسب كل جزء:\n${breakdown.join('\n')}` : ''}\n\nهذه أرقام تقديرية وليست خسارة محققة؛ بنيتها على الفجوات الظاهرة وافتراضات متوسط قيمة العميل وحجم الـleads.\n\nأنا ما أرسل لكم عرض تسويق عام. عندي المراجعة نفسها، وأقدر أوريكم بالضبط إيش يحتاج يتصلح أول وإيش الأولوية.\n\n${bookingUrl ? `إذا حابين نشوفها سوا، هذا رابط موعد قصير:\n${bookingUrl}\n\n` : ''}محمد\nSahab Agency`;
+  const body = `مرحبًا فريق ${lead.name}\n\n${context}\n\n${gapLine}\n\n${headline}${breakdown.length ? `\n\nالتفصيل حسب كل جزء:\n${breakdown.join('\n')}` : ''}\n\nمهم: هذه أرقام تقديرية وليست خسارة محققة؛ مبنية على ما أمكن رصده علنًا وافتراضات متوسط قيمة العميل وحجم الـleads. وعدم ظهور أداة Tracking في الفحص العام لا يعني بالضرورة أنها غير مركبة.\n\nأنا ما أرسل لكم عرض تسويق عام. عندي المراجعة نفسها، وأقدر أوريكم بالضبط إيش ظهر وإيش يحتاج تحقق أعمق وإيش الأولوية.\n\n${bookingUrl ? `إذا حابين نشوفها سوا، هذا رابط موعد قصير:\n${bookingUrl}\n\n` : ''}محمد\nSahab Agency`;
 
   return {
     subject: annual.high > 0
-      ? `${lead.name}: فرصة إيراد ضائعة قد تصل إلى ${money(annual.high)} سنويًا`
+      ? `${lead.name}: فرصة تحسين تقديرية قد تصل إلى ${money(annual.high)} ريال سنويًا`
       : `${lead.name}: مراجعة نمو سريعة`,
     body,
     channel: route.channel === 'research_required' ? 'email' : route.channel,
@@ -75,7 +76,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
     input: [
       {
         role: 'system',
-        content: 'Write a concise Arabic B2B outbound email for a Saudi/Gulf business in a natural professional tone. Lead with the estimated missed opportunity, then show a short service-by-service breakdown. Use only provided public evidence. Never state revenue loss as a verified fact. Phrase it as estimated missed opportunity / قد تكون تخسر / فرصة ضائعة and explicitly say it is an estimate based on assumptions. Do not invent traffic, spend, rankings, or revenue. Avoid generic praise. If a booking URL is provided, include it exactly once near the end. Output valid JSON with subject and body only.'
+        content: 'Write a concise Arabic B2B outbound email for a Saudi/Gulf business in a natural professional tone. Lead with an estimated improvement/opportunity range, then show a short service-by-service breakdown. Use only provided public evidence. Never state revenue loss as a verified fact. Never say a tracking tool, Meta Pixel, analytics tag, booking path, or conversion feature is definitely absent unless the evidence explicitly proves absence. If the public scan only failed to detect it, say لم يظهر لنا في الفحص العام / لم نتمكن من رصده publicly. If audit confidence is below 50 or auditMode is presence_only, explicitly call the number a conservative benchmark estimate and do not frame it as a direct business loss. Do not invent traffic, spend, rankings, leads, revenue, or customer behavior. Avoid generic praise. If a booking URL is provided, include it exactly once near the end. Output valid JSON with subject and body only.'
       },
       {
         role: 'user',
@@ -86,10 +87,11 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
           reviewCount: lead.reviewCount,
           industry,
           location,
+          auditMode: audit.auditMode,
           contactRoute: lead.contactRoute,
           socials: lead.socials,
           auditScore: audit.score,
-          issues: topIssues(audit),
+          issues: audit.issues,
           evidence: audit.evidence,
           opportunityEstimate: audit.opportunity,
           opportunityBreakdown: audit.opportunityBreakdown,
@@ -101,10 +103,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
 
   const response = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${key}`,
-      'Content-Type': 'application/json'
-    },
+    headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(20000)
   });
