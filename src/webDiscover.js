@@ -7,9 +7,10 @@ const SOCIAL_DOMAINS = {
 };
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-const STOP = new Set(['the','and','clinic','clinics','center','centre','company','co','llc','ltd','saudi','arabia','riyadh','jeddah','dubai','ksa']);
+const TEXT_URL_RE = /\b(?:https?:\/\/|www\.)[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:\/[^^\s<>()"']*)?/gi;
+const STOP = new Set(['the','and','clinic','clinics','center','centre','company','co','llc','ltd','saudi','arabia','riyadh','jeddah','dubai','ksa','medical','beauty']);
 const BAD_SOCIAL_PATHS = ['/popular/', '/explore/', '/search', '/hashtag/', '/topics/', '/directory/', '/reel/', '/reels/', '/p/', '/stories/', '/story/', '/video/', '/videos/', '/watch/'];
-const DIRECTORY_DOMAINS = ['google.com','maps.google','instagram.com','facebook.com','fb.com','linkedin.com','tiktok.com','x.com','twitter.com','youtube.com','yelp.com','tripadvisor.com','foursquare.com','yellowpages','linktr.ee','snapchat.com','pinterest.com'];
+const DIRECTORY_DOMAINS = ['google.com','maps.google','instagram.com','facebook.com','fb.com','linkedin.com','tiktok.com','x.com','twitter.com','youtube.com','yelp.com','tripadvisor.com','foursquare.com','yellowpages','linktr.ee','beacons.ai','bio.site','campsite.bio','taplink.cc','lnk.bio','solo.to','snapchat.com','pinterest.com','zavis.ai','therapr.com','magicpin.com','gulfhex.com'];
 
 function tokens(value = '') {
   return [...new Set(String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(x => x.length > 2 && !STOP.has(x)))];
@@ -23,7 +24,7 @@ function similarity(text, lead, location) {
   const locHits = locationTokens.filter(t => hay.includes(t)).length;
   const nameScore = nameTokens.length ? nameHits / nameTokens.length : 0;
   const locScore = locationTokens.length ? Math.min(1, locHits / Math.min(2, locationTokens.length)) : 0;
-  return Math.round((nameScore * 85) + (locScore * 15));
+  return Math.round((nameScore * 88) + (locScore * 12));
 }
 
 function channelFromUrl(url = '') {
@@ -59,6 +60,22 @@ function isCandidateOfficialWebsite(url = '') {
   }
 }
 
+function normalizeTextUrl(raw = '') {
+  const value = String(raw).replace(/[),.;:]+$/g, '');
+  if (!value) return null;
+  try {
+    const url = new URL(/^www\./i.test(value) ? `https://${value}` : value);
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function urlsFromSearchText(result) {
+  const text = [result.title, result.description, ...(result.extra_snippets || [])].join(' ');
+  return [...new Set((text.match(TEXT_URL_RE) || []).map(normalizeTextUrl).filter(Boolean))];
+}
+
 async function braveSearch(q, count = 10) {
   const key = process.env.BRAVE_SEARCH_API_KEY;
   if (!key) return [];
@@ -67,7 +84,7 @@ async function braveSearch(q, count = 10) {
   url.searchParams.set('count', String(Math.min(20, count)));
   url.searchParams.set('extra_snippets', 'true');
   const response = await fetch(url, {
-    headers: { 'Accept': 'application/json', 'X-Subscription-Token': key },
+    headers: { Accept: 'application/json', 'X-Subscription-Token': key },
     signal: AbortSignal.timeout(12000)
   });
   if (!response.ok) throw new Error(`Brave Search HTTP ${response.status}`);
@@ -90,14 +107,34 @@ function collectEmails(results, lead, location) {
 function bestWebsite(all, lead, location) {
   const candidates = [];
   for (const result of all) {
-    if (!isCandidateOfficialWebsite(result.url)) continue;
-    const text = `${result.title || ''} ${result.description || ''} ${result.url || ''}`;
-    const confidence = similarity(text, lead, location);
-    if (confidence < 82) continue;
-    candidates.push({ url: result.url, confidence, title: result.title || '', source: 'brave_web_search' });
+    const context = `${result.title || ''} ${result.description || ''} ${(result.extra_snippets || []).join(' ')} ${result.url || ''}`;
+    const contextConfidence = similarity(context, lead, location);
+
+    if (isCandidateOfficialWebsite(result.url) && contextConfidence >= 80) {
+      candidates.push({ url: result.url, confidence: contextConfidence, title: result.title || '', source: 'brave_direct_result' });
+    }
+
+    if (contextConfidence >= 80) {
+      for (const extractedUrl of urlsFromSearchText(result)) {
+        if (!isCandidateOfficialWebsite(extractedUrl)) continue;
+        candidates.push({
+          url: extractedUrl,
+          confidence: Math.max(0, contextConfidence - 4),
+          title: result.title || '',
+          source: `brave_snippet_via:${new URL(result.url).hostname}`
+        });
+      }
+    }
   }
-  candidates.sort((a,b) => b.confidence - a.confidence);
-  return candidates[0] || null;
+
+  const byHost = new Map();
+  for (const candidate of candidates) {
+    let host;
+    try { host = new URL(candidate.url).hostname.replace(/^www\./, '').toLowerCase(); } catch { continue; }
+    const current = byHost.get(host);
+    if (!current || candidate.confidence > current.confidence) byHost.set(host, candidate);
+  }
+  return [...byHost.values()].sort((a,b) => b.confidence - a.confidence)[0] || null;
 }
 
 export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
@@ -105,13 +142,16 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
     return { provider: 'not_configured', website: null, socials: {}, emailCandidates: [], evidence: [] };
   }
 
-  const baseQuery = `\"${lead.name}\" ${location || lead.address || ''}`.trim();
+  const locationText = location || lead.address || '';
+  const baseQuery = `\"${lead.name}\" ${locationText}`.trim();
+  const brandTokens = tokens(lead.name).slice(0, 4).join(' ');
   const queries = [
     `${baseQuery} official website`,
+    `${baseQuery} website`,
+    `${brandTokens} ${locationText} official site`,
     `${baseQuery} contact email`,
     `${baseQuery} Instagram Facebook LinkedIn`,
-    `${baseQuery} official Instagram`,
-    `${baseQuery} official LinkedIn`
+    `${baseQuery} official Instagram LinkedIn`
   ];
 
   const all = [];
@@ -127,9 +167,7 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
     const confidence = similarity(`${result.title} ${result.description} ${result.url}`, lead, location);
     if (confidence < 80) continue;
     const current = socials[channel];
-    if (!current || confidence > current.confidence) {
-      socials[channel] = { url: result.url, confidence, source: 'brave_web_search' };
-    }
+    if (!current || confidence > current.confidence) socials[channel] = { url: result.url, confidence, source: 'brave_web_search' };
   }
 
   const emailCandidates = collectEmails(all, lead, location).filter(x => x.confidence >= 80);
