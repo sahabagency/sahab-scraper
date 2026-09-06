@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { buildCommercialProfile } from './commercialProfile.js';
 
 const signals = [
   { key: 'hasTitle', label: 'SEO title', weight: 8, service: 'SEO & Search Visibility' },
@@ -20,35 +21,59 @@ function containsAny(text, words) {
   return words.some(word => haystack.includes(word));
 }
 
+function midpoint(range, fallback) {
+  const low = Number(range?.low);
+  const high = Number(range?.high);
+  if (!Number.isFinite(low) || !Number.isFinite(high) || low <= 0 || high <= 0) return fallback;
+  return Math.round((low + high) / 2);
+}
+
 function opportunityEstimate(score, assumptions = {}, context = {}) {
   const averageTicket = Number(assumptions.averageTicket) || 2500;
   const monthlyLeadEstimate = Number(assumptions.monthlyLeadEstimate) || 40;
-  const monthlyCommercialValue = averageTicket * monthlyLeadEstimate;
-  let lowRate; let highRate; let confidence; let method;
+  const profile = assumptions.commercialProfile || null;
 
+  const monthlyCommercialLow = Number(profile?.monthlyCommercialValueRange?.low) || (averageTicket * monthlyLeadEstimate);
+  const monthlyCommercialHigh = Number(profile?.monthlyCommercialValueRange?.high) || (averageTicket * monthlyLeadEstimate);
+
+  let lowRate; let highRate; let evidenceConfidence; let method;
   if (context.noWebsite) {
-    lowRate = 0.04; highRate = 0.10; confidence = 35; method = 'benchmark_no_website';
+    lowRate = 0.04; highRate = 0.10; evidenceConfidence = 35; method = 'benchmark_no_website';
   } else if (context.unreachableWebsite) {
-    lowRate = 0.05; highRate = 0.12; confidence = 40; method = 'benchmark_unreachable_website';
+    lowRate = 0.05; highRate = 0.12; evidenceConfidence = 40; method = 'benchmark_unreachable_website';
   } else {
     const gap = Math.max(0, 100 - score) / 100;
     lowRate = Math.min(0.16, gap * 0.16);
     highRate = Math.min(0.30, gap * 0.30);
-    confidence = Math.max(55, Math.min(92, 95 - Math.round(gap * 35)));
+    evidenceConfidence = Math.max(55, Math.min(92, 95 - Math.round(gap * 35)));
     method = 'observed_site_gap_model';
   }
 
-  const low = Math.round(monthlyCommercialValue * lowRate);
-  const high = Math.round(monthlyCommercialValue * highRate);
+  const low = Math.round(monthlyCommercialLow * lowRate);
+  const high = Math.round(monthlyCommercialHigh * highRate);
+  const assumptionConfidence = Number(profile?.confidence) || 35;
+  const confidence = Math.round((evidenceConfidence * 0.65) + (assumptionConfidence * 0.35));
+
   return {
-    monthlyRange: { low, high }, annualRange: { low: low * 12, high: high * 12 },
-    assumptions: { averageTicket, monthlyLeadEstimate }, confidence, method,
+    monthlyRange: { low, high },
+    annualRange: { low: low * 12, high: high * 12 },
+    assumptions: {
+      averageTicket,
+      monthlyLeadEstimate,
+      averageTicketRange: profile?.averageTicketRange || null,
+      monthlyLeadRange: profile?.monthlyLeadRange || null,
+      monthlyCommercialValueRange: profile?.monthlyCommercialValueRange || null
+    },
+    confidence,
+    evidenceConfidence,
+    assumptionConfidence,
+    method,
     basis: context.noWebsite
-      ? 'No website was found in Google Places or public discovery. The estimate uses a conservative benchmark band against the stated monthly lead value.'
+      ? 'No verified website was found. The opportunity range uses a conservative leak-rate band over a per-lead public-footprint commercial assumption range.'
       : context.unreachableWebsite
-        ? 'The linked website could not be loaded. The estimate uses a conservative benchmark band against the stated monthly lead value.'
-        : 'Estimate derived from observable public-site gaps and the stated average ticket and monthly lead assumptions.',
-    disclaimer: 'Estimated missed opportunity, not verified lost revenue.'
+        ? 'The linked website could not be loaded. The opportunity range uses a conservative leak-rate band over a per-lead public-footprint commercial assumption range.'
+        : 'Opportunity range combines observable public-site gaps with a per-lead commercial assumption profile derived from public footprint and campaign anchors.',
+    disclaimer: 'Estimated missed opportunity, not verified lost revenue. Commercial inputs are modeled assumptions, not CRM or accounting data.'
   };
 }
 
@@ -105,14 +130,27 @@ async function braveCorroboration(lead, website) {
 }
 
 export async function auditLead(lead, assumptions = {}) {
+  const commercialProfile = buildCommercialProfile({
+    lead,
+    industry: assumptions.industry || '',
+    averageTicketAnchor: assumptions.averageTicket,
+    monthlyLeadAnchor: assumptions.monthlyLeadEstimate
+  });
+  const smartAssumptions = {
+    ...assumptions,
+    averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || 2500),
+    monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || 40),
+    commercialProfile
+  };
+
   const result = {
     website: lead.website || null, checkedAt: new Date().toISOString(), score: null, signals: {}, issues: [], wins: [],
-    opportunity: null, opportunityBreakdown: [], evidence: {}, auditMode: lead.website ? 'website' : 'presence_only'
+    opportunity: null, opportunityBreakdown: [], evidence: {}, auditMode: lead.website ? 'website' : 'presence_only', commercialProfile
   };
 
   if (!lead.website) {
     result.issues.push({ severity: 'high', title: 'No website found', detail: 'Google Places and current public discovery did not return a verified business website.', service: 'Website & Conversion' });
-    result.opportunity = opportunityEstimate(null, assumptions, { noWebsite: true });
+    result.opportunity = opportunityEstimate(null, smartAssumptions, { noWebsite: true });
     result.opportunityBreakdown = [{ service: 'Website & Conversion', issues: ['No verified website found'], annualRange: result.opportunity.annualRange }];
     result.evidence = { googleRating: lead.rating || null, reviewCount: lead.reviewCount || null, contactRoute: lead.contactRoute || null };
     return result;
@@ -127,7 +165,7 @@ export async function auditLead(lead, assumptions = {}) {
   } catch (error) {
     result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical' });
     result.signals.loads = false;
-    result.opportunity = opportunityEstimate(null, assumptions, { unreachableWebsite: true });
+    result.opportunity = opportunityEstimate(null, smartAssumptions, { unreachableWebsite: true });
     result.opportunityBreakdown = [{ service: 'Website Trust & Technical', issues: ['Website could not be loaded'], annualRange: result.opportunity.annualRange }];
     return result;
   }
@@ -185,7 +223,7 @@ export async function auditLead(lead, assumptions = {}) {
   }
 
   result.score = Math.min(100, score);
-  result.opportunity = opportunityEstimate(result.score, assumptions);
+  result.opportunity = opportunityEstimate(result.score, smartAssumptions);
   result.opportunityBreakdown = buildServiceBreakdown(result.issues, result.opportunity);
   result.evidence = {
     finalUrl: response.url, status: response.status, title: $('title').text().trim().slice(0, 180),
