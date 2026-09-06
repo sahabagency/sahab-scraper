@@ -23,12 +23,13 @@ function nameFromUrl(value='') {
 }
 
 async function loadConfig() {
-  const config = await fetch('/api/config').then(r => r.json());
+  const config = await fetch('/api/config', { cache: 'no-store' }).then(r => r.json());
   const ready = [
     ['Places', config.googlePlacesReady],
     ['OpenAI', config.openAiReady],
     ['Web', config.webDiscoveryReady],
-    ['Booking', config.bookingUrlReady]
+    ['Booking', config.bookingUrlReady],
+    ['DB', config.persistenceReady && !config.persistenceStats?.error]
   ];
   const statusHtml = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('');
   let gmailHtml = config.gmailOauthReady
@@ -47,7 +48,12 @@ async function loadConfig() {
     }
   }
 
-  configEl.innerHTML = `${statusHtml}${gmailHtml}`;
+  const outbound = config.outbound || {};
+  const outboundHtml = outbound.enabled
+    ? `<span class="ready" title="Daily limit ${esc(outbound.dailyLimit || 0)} · review ${outbound.requireReview ? 'required' : 'off'}">Send ●</span>`
+    : '<span title="Sending is intentionally locked until first batch approval">Send 🔒</span>';
+
+  configEl.innerHTML = `${statusHtml}${gmailHtml}${outboundHtml}`;
   if (config.bookingUrl && form && !form.bookingUrl.value) form.bookingUrl.value = config.bookingUrl;
 }
 
@@ -80,10 +86,7 @@ scanForm.addEventListener('submit', async event => {
   try {
     const response = await fetch('/api/leads/audit', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        lead: { name: nameFromUrl(website), website },
-        assumptions: { averageTicket: 2500, monthlyLeadEstimate: 40 }
-      })
+      body: JSON.stringify({ lead: { name: nameFromUrl(website), website }, assumptions: { averageTicket: 2500, monthlyLeadEstimate: 40 } })
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Scan failed');
@@ -95,15 +98,16 @@ scanForm.addEventListener('submit', async event => {
 });
 
 function renderCampaign(campaign) {
-  countEl.textContent = `${campaign.leads.length} leads`;
-  if (!campaign.leads.length) { results.className='results empty'; results.textContent='No leads found.'; return; }
+  const leads = campaign.leads || [];
+  countEl.textContent = `${leads.length} leads`;
+  if (!leads.length) { results.className='results empty'; results.textContent='No leads found.'; return; }
   results.className='results';
-  results.innerHTML = campaign.leads.map((lead,index)=>{
+  results.innerHTML = leads.map((lead,index)=>{
     const audit=lead.audit||{}; const annual=audit.opportunity?.annualRange||{low:0,high:0};
     const issues=(audit.issues||[]).slice(0,4).map(i=>`<li><strong>${esc(i.severity)}</strong> — ${esc(i.title)}</li>`).join('');
     const breakdown=(audit.opportunityBreakdown||[]).slice(0,6).map(item=>`<tr><td>${esc(item.service)}</td><td>${money(item.annualRange?.low)}–${money(item.annualRange?.high)}</td><td>${esc((item.issues||[]).slice(0,2).join(', '))}</td></tr>`).join('');
     const route=lead.contactRoute||{}; const destination=route.destination||lead.contactEmail||lead.phone||'Research required';
-    return `<article class="lead-card"><div class="lead-top"><div><div class="kicker">#${index+1} · ${esc(lead.address||'')}</div><h3>${esc(lead.name)}</h3><div class="meta">${lead.rating?`★ ${esc(lead.rating)} (${esc(lead.reviewCount)})`:'No rating data'} · ${lead.website?`<a href="${esc(lead.website)}" target="_blank">website</a>`:'no website'}</div><div class="meta"><strong>Best contact:</strong> ${esc(route.channel||(lead.contactEmail?'email':'research_required'))} · ${esc(destination)}</div></div><div class="score"><span>${esc(audit.score??0)}</span>/100</div></div><div class="columns"><div><h4>Estimated missed opportunity</h4><p class="opportunity"><strong>${money(annual.low)}–${money(annual.high)} / year</strong></p><table class="breakdown"><thead><tr><th>Area</th><th>Est. annual range</th><th>Evidence</th></tr></thead><tbody>${breakdown||'<tr><td colspan="3">No breakdown available.</td></tr>'}</tbody></table><h4>Top gaps</h4><ul>${issues||'<li>No major issue detected in current checks.</li>'}</ul><p class="fine">Estimate only; based on campaign assumptions and observable gaps, not verified lost revenue.</p></div><div><h4>Exact outreach preview</h4><p><strong>${esc(lead.outreach?.subject||'')}</strong></p><pre>${esc(lead.outreach?.body||'')}</pre></div></div></article>`;
+    return `<article class="lead-card"><div class="lead-top"><div><div class="kicker">#${index+1} · ${esc(lead.address||'')} · ${esc(lead.status||'')}</div><h3>${esc(lead.name)}</h3><div class="meta">${lead.rating?`★ ${esc(lead.rating)} (${esc(lead.reviewCount)})`:'No rating data'} · ${lead.website?`<a href="${esc(lead.website)}" target="_blank">website</a>`:'no website'}</div><div class="meta"><strong>Best contact:</strong> ${esc(route.channel||(lead.contactEmail?'email':'research_required'))} · ${esc(destination)}</div></div><div class="score"><span>${esc(audit.score??0)}</span>/100</div></div><div class="columns"><div><h4>Estimated missed opportunity</h4><p class="opportunity"><strong>${money(annual.low)}–${money(annual.high)} / year</strong></p><table class="breakdown"><thead><tr><th>Area</th><th>Est. annual range</th><th>Evidence</th></tr></thead><tbody>${breakdown||'<tr><td colspan="3">No breakdown available.</td></tr>'}</tbody></table><h4>Top gaps</h4><ul>${issues||'<li>No major issue detected in current checks.</li>'}</ul><p class="fine">Estimate only; based on campaign assumptions and observable gaps, not verified lost revenue.</p></div><div><h4>Exact outreach preview</h4><p><strong>${esc(lead.outreach?.subject||'')}</strong></p><pre>${esc(lead.outreach?.body||'')}</pre><p class="fine">Sending remains locked until the first batch is explicitly approved.</p></div></div></article>`;
   }).join('');
 }
 
@@ -111,7 +115,7 @@ if (form) form.addEventListener('submit', async event => {
   event.preventDefault(); const payload=Object.fromEntries(new FormData(form).entries());
   payload.limit=Number(payload.limit); payload.averageTicket=Number(payload.averageTicket); payload.monthlyLeadEstimate=Number(payload.monthlyLeadEstimate);
   statusEl.textContent='Discovering businesses, enriching contacts, auditing gaps, and writing outreach…'; form.querySelector('button').disabled=true;
-  try { const response=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'Campaign failed'); renderCampaign(data); statusEl.textContent=`Done: ${data.leads.length} leads audited.`; }
+  try { const response=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'Campaign failed'); renderCampaign(data); statusEl.textContent=`Done: ${data.leads.length} leads audited and saved.`; }
   catch(error){statusEl.textContent=`Error: ${error.message}`;} finally{form.querySelector('button').disabled=false;}
 });
 
