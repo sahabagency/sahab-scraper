@@ -26,10 +26,7 @@ export function createGoogleAuthUrl() {
   if (!oauthConfigured()) throw new Error('Gmail OAuth is not configured');
   const state = crypto.randomBytes(24).toString('hex');
   pendingStates.set(state, Date.now() + 10 * 60 * 1000);
-
-  for (const [key, expiresAt] of pendingStates) {
-    if (expiresAt < Date.now()) pendingStates.delete(key);
-  }
+  for (const [key, expiresAt] of pendingStates) if (expiresAt < Date.now()) pendingStates.delete(key);
 
   const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   url.searchParams.set('client_id', process.env.GMAIL_CLIENT_ID);
@@ -99,16 +96,29 @@ export async function verifyGmailConnection() {
   return { emailAddress: data.emailAddress, messagesTotal: data.messagesTotal, threadsTotal: data.threadsTotal };
 }
 
-export async function sendGmail({ to, subject, body, replyToMessageId = null }) {
+export async function sendGmail({ to, subject, body, html = null, replyToMessageId = null }) {
   const token = await getGoogleAccessToken();
   const headers = [
     `To: ${to}`,
     `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`,
-    'MIME-Version: 1.0',
-    'Content-Type: text/plain; charset=UTF-8'
+    'MIME-Version: 1.0'
   ];
   if (replyToMessageId) headers.push(`In-Reply-To: ${replyToMessageId}`, `References: ${replyToMessageId}`);
-  const raw = base64url(`${headers.join('\r\n')}\r\n\r\n${body}`);
+
+  let message;
+  if (html) {
+    const boundary = `sahab_${crypto.randomBytes(12).toString('hex')}`;
+    headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+    message = `${headers.join('\r\n')}\r\n\r\n` +
+      `--${boundary}\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${body}\r\n` +
+      `--${boundary}\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n${html}\r\n` +
+      `--${boundary}--`;
+  } else {
+    headers.push('Content-Type: text/plain; charset=UTF-8');
+    message = `${headers.join('\r\n')}\r\n\r\n${body}`;
+  }
+
+  const raw = base64url(message);
   const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
