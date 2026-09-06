@@ -34,6 +34,11 @@ function buildBreakdownLines(audit) {
   });
 }
 
+function ensureBookingLink(body, bookingUrl) {
+  if (!bookingUrl || String(body).includes(bookingUrl)) return body;
+  return `${String(body).trim()}\n\nإذا حابين نشوف المراجعة سوا، هذا رابط موعد قصير:\n${bookingUrl}`;
+}
+
 function fallbackMessage({ lead, audit, bookingUrl }) {
   const issues = topIssues(audit);
   const route = lead.contactRoute || { channel: lead.contactEmail ? 'email' : 'research_required', destination: lead.contactEmail || null };
@@ -70,7 +75,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
     input: [
       {
         role: 'system',
-        content: 'Write a concise Arabic B2B outbound email for a Saudi/Gulf business in a natural professional tone. Lead with the estimated missed opportunity, then show a short service-by-service breakdown. Use only provided public evidence. Never state revenue loss as a verified fact. Phrase it as estimated missed opportunity / قد تكون تخسر / فرصة ضائعة and explicitly say it is an estimate based on assumptions. Do not invent traffic, spend, rankings, or revenue. Avoid generic praise. Output valid JSON with subject and body only.'
+        content: 'Write a concise Arabic B2B outbound email for a Saudi/Gulf business in a natural professional tone. Lead with the estimated missed opportunity, then show a short service-by-service breakdown. Use only provided public evidence. Never state revenue loss as a verified fact. Phrase it as estimated missed opportunity / قد تكون تخسر / فرصة ضائعة and explicitly say it is an estimate based on assumptions. Do not invent traffic, spend, rankings, or revenue. Avoid generic praise. If a booking URL is provided, include it exactly once near the end. Output valid JSON with subject and body only.'
       },
       {
         role: 'user',
@@ -115,7 +120,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
     if (!parsed.subject || !parsed.body) return null;
     return {
       subject: parsed.subject,
-      body: parsed.body,
+      body: ensureBookingLink(parsed.body, bookingUrl),
       channel: lead.contactRoute?.channel || (lead.contactEmail ? 'email' : 'research_required'),
       destination: lead.contactRoute?.destination || lead.contactEmail || null,
       generatedBy: 'openai',
