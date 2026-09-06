@@ -8,6 +8,7 @@ const SOCIAL_DOMAINS = {
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const STOP = new Set(['the','and','clinic','clinics','center','centre','company','co','llc','ltd','saudi','arabia','riyadh','jeddah','dubai','ksa']);
+const BAD_SOCIAL_PATHS = ['/popular/', '/explore/', '/search', '/hashtag/', '/topics/', '/directory/'];
 
 function tokens(value = '') {
   return [...new Set(String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(x => x.length > 2 && !STOP.has(x)))];
@@ -30,6 +31,18 @@ function channelFromUrl(url = '') {
     if (domains.some(d => lower.includes(d))) return channel;
   }
   return null;
+}
+
+function isDirectSocialProfile(url = '') {
+  try {
+    const parsed = new URL(url);
+    const path = parsed.pathname.toLowerCase();
+    if (BAD_SOCIAL_PATHS.some(p => path.includes(p))) return false;
+    const segments = path.split('/').filter(Boolean);
+    return segments.length >= 1 && segments.length <= 3;
+  } catch {
+    return false;
+  }
 }
 
 async function braveSearch(q, count = 10) {
@@ -68,7 +81,9 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
   const baseQuery = `\"${lead.name}\" ${location || lead.address || ''}`.trim();
   const queries = [
     `${baseQuery} contact email`,
-    `${baseQuery} Instagram Facebook LinkedIn`
+    `${baseQuery} Instagram Facebook LinkedIn`,
+    `${baseQuery} official Instagram`,
+    `${baseQuery} official LinkedIn`
   ];
 
   const all = [];
@@ -78,26 +93,25 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
   }
 
   const socials = {};
-  const evidence = [];
   for (const result of all) {
     const channel = channelFromUrl(result.url);
-    if (!channel) continue;
+    if (!channel || !isDirectSocialProfile(result.url)) continue;
     const confidence = similarity(`${result.title} ${result.description} ${result.url}`, lead, location);
-    if (confidence < 60) continue;
+    if (confidence < 75) continue;
     const current = socials[channel];
     if (!current || confidence > current.confidence) {
       socials[channel] = { url: result.url, confidence, source: 'brave_web_search' };
     }
   }
 
-  const emailCandidates = collectEmails(all, lead, location).filter(x => x.confidence >= 65);
+  const emailCandidates = collectEmails(all, lead, location).filter(x => x.confidence >= 75);
   const uniqueEvidence = [];
   const seen = new Set();
   for (const r of all) {
     if (seen.has(r.url)) continue;
     seen.add(r.url);
     const confidence = similarity(`${r.title} ${r.description} ${r.url}`, lead, location);
-    if (confidence >= 60) uniqueEvidence.push({ title: r.title, url: r.url, confidence, query: r.query });
+    if (confidence >= 70) uniqueEvidence.push({ title: r.title, url: r.url, confidence, query: r.query });
   }
 
   return {
