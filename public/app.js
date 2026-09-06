@@ -8,7 +8,7 @@ const scanStatus = document.querySelector('#scan-status');
 const scanResult = document.querySelector('#scan-result');
 
 function esc(value = '') {
-  return String(value).replace(/[&<>'"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[c]));
+  return String(value).replace(/[&<>'\"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '\"': '&quot;' }[c]));
 }
 
 function money(n) { return Number(n || 0).toLocaleString('en-US'); }
@@ -30,12 +30,13 @@ async function loadConfig() {
     ['Web', config.webDiscoveryReady],
     ['Booking', config.bookingUrlReady]
   ];
-  const gmailLabel = config.gmailConnected
+  const statusHtml = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('');
+  const gmailHtml = config.gmailConnected
     ? '<span class="ready">Gmail ●</span>'
     : config.gmailOauthReady
-      ? '<a href="/auth/google" style="color:#d7bd68;text-decoration:none">Connect Gmail ○</a>'
+      ? '<a href="/auth/google" style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid #d7bd68;border-radius:999px;color:#f2d66d;text-decoration:none;font-weight:700">Connect Gmail ↗</a>'
       : '<span>Gmail ○</span>';
-  configEl.innerHTML = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('') + gmailLabel;
+  configEl.innerHTML = `${statusHtml}${gmailHtml}`;
   if (config.bookingUrl && form && !form.bookingUrl.value) form.bookingUrl.value = config.bookingUrl;
 }
 
