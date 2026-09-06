@@ -31,11 +31,22 @@ async function loadConfig() {
     ['Booking', config.bookingUrlReady]
   ];
   const statusHtml = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('');
-  const gmailHtml = config.gmailConnected
-    ? '<span class="ready">Gmail ●</span>'
-    : config.gmailOauthReady
-      ? '<a href="/auth/google" style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid #d7bd68;border-radius:999px;color:#f2d66d;text-decoration:none;font-weight:700">Connect Gmail ↗</a>'
-      : '<span>Gmail ○</span>';
+  let gmailHtml = config.gmailOauthReady
+    ? '<a href="/auth/google" style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid #d7bd68;border-radius:999px;color:#f2d66d;text-decoration:none;font-weight:700">Connect Gmail ↗</a>'
+    : '<span>Gmail ○</span>';
+
+  if (config.gmailConnected) {
+    try {
+      const response = await fetch('/api/gmail/verify', { cache: 'no-store' });
+      const verified = await response.json();
+      gmailHtml = verified.ok
+        ? `<span class="ready" title="${esc(verified.emailAddress || '')}">Gmail ●</span>`
+        : '<span title="OAuth token needs attention">Gmail !</span>';
+    } catch {
+      gmailHtml = '<span title="Could not verify Gmail right now">Gmail ?</span>';
+    }
+  }
+
   configEl.innerHTML = `${statusHtml}${gmailHtml}`;
   if (config.bookingUrl && form && !form.bookingUrl.value) form.bookingUrl.value = config.bookingUrl;
 }
