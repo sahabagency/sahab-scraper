@@ -7,9 +7,10 @@ import { discoverLeads } from './src/discover.js';
 import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
-import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus, verifyGmailConnection, sendGmail, findReplies } from './src/gmail.js';
+import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus, verifyGmailConnection, sendGmail } from './src/gmail.js';
 import { outboundPolicy, outboundRuntimeStatus } from './src/outboundGuard.js';
-import { dbConfigured, saveCampaign, saveLead, getCampaign, listCampaigns, dbStatus, claimSend, markSent, markSendFailed, markReplied, dueFollowups, replyCandidates, suppressEmail } from './src/db.js';
+import { dbConfigured, saveCampaign, saveLead, getCampaign, listCampaigns, dbStatus, claimSend, markSent, markSendFailed, suppressEmail } from './src/db.js';
+import { runReplyAndFollowupCheck, automationStatus, startAutomationLoop } from './src/automation.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -40,6 +41,7 @@ app.get('/api/config', async (_req, res) => {
     gmailConnected: gmail.connected,
     persistenceReady: dbConfigured(),
     persistenceStats,
+    automation: automationStatus(),
     bookingUrl: process.env.CALENDAR_BOOKING_URL || '',
     outbound: { ...outboundRuntimeStatus(), persistence: dbConfigured() ? 'supabase' : 'memory_only' }
   });
@@ -176,26 +178,13 @@ app.post('/api/leads/suppress', async (req, res) => {
 });
 
 app.post('/api/automation/check-replies', async (_req, res) => {
-  try {
-    if (!dbConfigured()) return res.status(503).json({ ok: false, error: 'persistent database required' });
-    const candidates = await replyCandidates(200);
-    const replies = [];
-    for (const lead of candidates || []) {
-      const afterUnix = lead.sentAt ? Math.floor(new Date(lead.sentAt).getTime() / 1000) : 0;
-      const found = await findReplies({ fromEmail: lead.email, afterUnix, maxResults: 5 });
-      if (found.length) {
-        await markReplied(lead.id, found[0].id || null);
-        replies.push({ leadId: lead.id, email: lead.email, messageId: found[0].id || null });
-      }
-    }
-    const followups = await dueFollowups(50);
-    res.json({ ok: true, checked: candidates?.length || 0, repliesDetected: replies.length, replies, followupsDue: followups?.length || 0, followups });
-  } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
+  try { res.json(await runReplyAndFollowupCheck()); }
+  catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
 app.get('/api/system/status', async (_req, res) => {
   try {
-    res.json({ ok: true, persistence: dbConfigured() ? await dbStatus() : null, outbound: { ...outboundRuntimeStatus(), persistence: dbConfigured() ? 'supabase' : 'memory_only' } });
+    res.json({ ok: true, persistence: dbConfigured() ? await dbStatus() : null, automation: automationStatus(), outbound: { ...outboundRuntimeStatus(), persistence: dbConfigured() ? 'supabase' : 'memory_only' } });
   } catch (error) { res.status(500).json({ ok: false, error: error.message }); }
 });
 
@@ -222,5 +211,9 @@ async function runStartupSelfTest() {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Sahab X-Ray Lead Engine listening on :${PORT}`);
+  if (dbConfigured()) {
+    dbStatus().then(status => console.log('[DB] READY', JSON.stringify(status))).catch(error => console.error('[DB] FAILED', error.message || error));
+  }
+  startAutomationLoop();
   runStartupSelfTest();
 });
