@@ -8,6 +8,8 @@ import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
 import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus, verifyGmailConnection, sendGmail } from './src/gmail.js';
+import { verifyCalendarConnection } from './src/calendar.js';
+import { buildXrayEmailHtml } from './src/emailTemplate.js';
 import { outboundPolicy, outboundRuntimeStatus } from './src/outboundGuard.js';
 import { dbConfigured, saveCampaign, saveLead, getCampaign, listCampaigns, dbStatus, claimSend, markSent, markSendFailed, suppressEmail } from './src/db.js';
 import { runReplyAndFollowupCheck, automationStatus, startAutomationLoop } from './src/automation.js';
@@ -56,9 +58,18 @@ app.get('/api/gmail/verify', async (_req, res) => {
   }
 });
 
+app.get('/api/calendar/verify', async (_req, res) => {
+  try {
+    await verifyCalendarConnection();
+    res.json({ ok: true, connected: true });
+  } catch (error) {
+    res.status(400).json({ ok: false, connected: false, error: error.message || 'Calendar verification failed' });
+  }
+});
+
 app.get('/auth/google', (_req, res) => {
   try { res.redirect(createGoogleAuthUrl()); }
-  catch (error) { res.status(500).send(`Gmail OAuth setup error: ${String(error.message || error)}`); }
+  catch (error) { res.status(500).send(`Google OAuth setup error: ${String(error.message || error)}`); }
 });
 
 app.get('/auth/google/callback', async (req, res) => {
@@ -66,9 +77,9 @@ app.get('/auth/google/callback', async (req, res) => {
     const tokens = await exchangeGoogleCode({ code: req.query.code, state: req.query.state });
     const refreshToken = tokens.refresh_token;
     const safeToken = String(refreshToken).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');
-    res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gmail connected</title><style>body{font-family:Arial,sans-serif;background:#111;color:#f5f0df;padding:40px}.card{max-width:760px;margin:auto;background:#1b1a16;border:1px solid #4b4638;border-radius:20px;padding:28px}textarea{width:100%;min-height:110px;background:#0d0d0c;color:#f5f0df;border:1px solid #5b5443;border-radius:12px;padding:12px}code{color:#e9c65a}</style></head><body><div class="card"><h1>Gmail OAuth approved</h1><p>الربط نجح. عشان يظل النظام شغال بعد أي Restart، انسخ القيمة التالية مرة واحدة وحطها في Railway باسم <code>GMAIL_REFRESH_TOKEN</code>. لا ترسلها في المحادثة.</p><textarea readonly onclick="this.select()">${safeToken}</textarea><p>بعد إضافتها في Railway وحفظها، ارجع للواجهة.</p></div></body></html>`);
+    res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Google connected</title><style>body{font-family:Arial,sans-serif;background:#111;color:#f5f0df;padding:40px}.card{max-width:760px;margin:auto;background:#1b1a16;border:1px solid #4b4638;border-radius:20px;padding:28px}textarea{width:100%;min-height:110px;background:#0d0d0c;color:#f5f0df;border:1px solid #5b5443;border-radius:12px;padding:12px}code{color:#e9c65a}</style></head><body><div class="card"><h1>Google OAuth approved</h1><p>الربط نجح لـ Gmail + Calendar. انسخ القيمة التالية مرة واحدة وحطها في Railway باسم <code>GMAIL_REFRESH_TOKEN</code>. لا ترسلها في المحادثة.</p><textarea readonly onclick="this.select()">${safeToken}</textarea></div></body></html>`);
   } catch (error) {
-    res.status(400).type('html').send(`<h2>Gmail OAuth failed</h2><pre>${String(error.message || error)}</pre>`);
+    res.status(400).type('html').send(`<h2>Google OAuth failed</h2><pre>${String(error.message || error)}</pre>`);
   }
 });
 
@@ -78,18 +89,7 @@ app.post('/api/campaigns', async (req, res) => {
     if (!industry || !location) return res.status(400).json({ error: 'industry and location are required' });
 
     const id = crypto.randomUUID();
-    const campaign = {
-      id,
-      name: name || `${industry} — ${location}`,
-      industry,
-      location,
-      bookingUrl,
-      averageTicket: Number(averageTicket) || 2500,
-      monthlyLeadEstimate: Number(monthlyLeadEstimate) || 40,
-      status: 'discovering',
-      createdAt: new Date().toISOString(),
-      leads: []
-    };
+    const campaign = { id, name: name || `${industry} — ${location}`, industry, location, bookingUrl, averageTicket: Number(averageTicket) || 2500, monthlyLeadEstimate: Number(monthlyLeadEstimate) || 40, status: 'discovering', createdAt: new Date().toISOString(), leads: [] };
     campaigns.set(id, campaign);
     if (dbConfigured()) await saveCampaign(campaign);
 
@@ -145,7 +145,8 @@ app.post('/api/leads/audit', async (req, res) => {
     const lead = await enrichLeadContact(inputLead, { location });
     const audit = await auditLead(lead, req.body?.assumptions || {});
     const outreach = await buildOutreach({ lead, audit, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '', industry: req.body?.industry || '', location });
-    res.json({ lead, audit, outreach });
+    const emailHtml = buildXrayEmailHtml({ name: lead.name, website: lead.website, audit, body: outreach.body, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '' });
+    res.json({ lead, audit, outreach, emailHtml });
   } catch (error) { res.status(500).json({ error: error.message || 'Audit failed' }); }
 });
 
@@ -159,7 +160,8 @@ app.post('/api/leads/:id/send', async (req, res) => {
   try {
     claim = await claimSend(req.params.id, policy.dailyLimit);
     if (!claim?.ok) return res.status(409).json(claim);
-    const sent = await sendGmail({ to: claim.email, subject: claim.subject, body: claim.body });
+    const html = buildXrayEmailHtml({ name: claim.name, website: claim.website, audit: claim.audit || {}, body: claim.body, bookingUrl: process.env.CALENDAR_BOOKING_URL || '' });
+    const sent = await sendGmail({ to: claim.email, subject: claim.subject, body: claim.body, html });
     await markSent(req.params.id, sent.id, sent.threadId || null);
     res.json({ ok: true, leadId: req.params.id, messageId: sent.id, threadId: sent.threadId || null });
   } catch (error) {
@@ -202,7 +204,7 @@ async function runStartupSelfTest() {
       const lead = await enrichLeadContact(rawLead, { location });
       const audit = await auditLead(lead, { averageTicket: 2500, monthlyLeadEstimate: 40 });
       const outreach = await buildOutreach({ lead, audit, bookingUrl: process.env.CALENDAR_BOOKING_URL || '', industry: 'aesthetic clinics', location });
-      results.push({ name: lead.name, website: lead.website || null, contactEmail: lead.contactEmail || null, contactRoute: lead.contactRoute || null, rating: lead.rating || null, score: audit.score, opportunity: audit.opportunity?.annualRange || null, generatedBy: outreach.generatedBy || null, subject: outreach.subject, bookingLinkIncluded: Boolean(process.env.CALENDAR_BOOKING_URL && outreach.body?.includes(process.env.CALENDAR_BOOKING_URL)) });
+      results.push({ name: lead.name, website: lead.website || null, contactEmail: lead.contactEmail || null, score: audit.score, opportunity: audit.opportunity?.annualRange || null, generatedBy: outreach.generatedBy || null, subject: outreach.subject, bookingLinkIncluded: Boolean(process.env.CALENDAR_BOOKING_URL && outreach.body?.includes(process.env.CALENDAR_BOOKING_URL)) });
     }
     console.log('[SELFTEST] SUCCESS ' + JSON.stringify({ count: results.length, durationMs: Date.now() - startedAt, results }));
   } catch (error) { console.error('[SELFTEST] FAILED ' + JSON.stringify({ durationMs: Date.now() - startedAt, error: error?.message || String(error) })); }
@@ -211,9 +213,9 @@ async function runStartupSelfTest() {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Sahab X-Ray Lead Engine listening on :${PORT}`);
-  if (dbConfigured()) {
-    dbStatus().then(status => console.log('[DB] READY', JSON.stringify(status))).catch(error => console.error('[DB] FAILED', error.message || error));
-  }
+  if (dbConfigured()) dbStatus().then(status => console.log('[DB] READY', JSON.stringify(status))).catch(error => console.error('[DB] FAILED', error.message || error));
+  verifyGmailConnection().then(profile => console.log('[GMAIL] READY', profile.emailAddress)).catch(error => console.error('[GMAIL] FAILED', error.message || error));
+  verifyCalendarConnection().then(() => console.log('[CALENDAR] READY')).catch(error => console.error('[CALENDAR] FAILED', error.message || error));
   startAutomationLoop();
   runStartupSelfTest();
 });
