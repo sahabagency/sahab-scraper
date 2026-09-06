@@ -26,7 +26,7 @@ function rowsFromAudit(audit = {}) {
   }).join('');
 }
 
-export function buildXrayEmailHtml({ name, website, audit = {}, body = '', bookingUrl = '' }) {
+export function buildXrayEmailHtml({ name, website, audit = {}, body = '', bookingUrl = '', unsubscribeUrl = '' }) {
   const monthly = audit.opportunity?.monthlyRange || { low: 0, high: 0 };
   const rows = rowsFromAudit(audit);
   const summary = String(body || '').split('\n').filter(Boolean).slice(0, 5).join('<br>');
@@ -65,7 +65,7 @@ export function buildXrayEmailHtml({ name, website, audit = {}, body = '', booki
 
           <div style="margin-top:22px;color:#8e887b;font-size:11px;line-height:1.6;text-align:center">Live scan · public data only · figures are estimates, not verified lost revenue</div>
         </td></tr>
-        <tr><td style="padding:14px 8px 0;color:#877c61;font-size:12px;text-align:center">محمد · Sahab Agency</td></tr>
+        <tr><td style="padding:14px 8px 0;color:#877c61;font-size:12px;text-align:center">محمد · Sahab Agency${unsubscribeUrl ? ` · <a href="${esc(unsubscribeUrl)}" style="color:#877c61;text-decoration:underline">إيقاف الرسائل</a>` : ''}</td></tr>
       </table>
     </td></tr>
   </table>
