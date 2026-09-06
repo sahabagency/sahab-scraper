@@ -1,3 +1,5 @@
+import { validateOutreach } from './messageGuard.js';
+
 function topIssues(audit) {
   const severity = { high: 3, medium: 2, low: 1 };
   return (audit.issues || [])
@@ -12,7 +14,7 @@ function money(n) {
 }
 
 function issueSentence(issues) {
-  if (!issues.length) return 'لقيت عدة فجوات تستحق المراجعة في مسار التحويل والظهور الرقمي.';
+  if (!issues.length) return 'لقيت عدة نقاط تستحق المراجعة في مسار التحويل والظهور الرقمي.';
   if (issues.length === 1) return `أوضح نقطة ظهرت لي في الفحص العام: ${issues[0]}.`;
   return `أوضح النقاط اللي ظهرت لي في الفحص العام: ${issues.join('، ')}.`;
 }
@@ -39,6 +41,11 @@ function ensureBookingLink(body, bookingUrl) {
   return `${String(body).trim()}\n\nإذا حابين نشوف المراجعة سوا، هذا رابط موعد قصير:\n${bookingUrl}`;
 }
 
+function withQuality(message, { audit, bookingUrl }) {
+  const quality = validateOutreach({ subject: message.subject, body: message.body, bookingUrl, audit });
+  return { ...message, quality };
+}
+
 function fallbackMessage({ lead, audit, bookingUrl }) {
   const issues = topIssues(audit);
   const route = lead.contactRoute || { channel: lead.contactEmail ? 'email' : 'research_required', destination: lead.contactEmail || null };
@@ -54,7 +61,7 @@ function fallbackMessage({ lead, audit, bookingUrl }) {
 
   const body = `مرحبًا فريق ${lead.name}\n\n${context}\n\n${gapLine}\n\n${headline}${breakdown.length ? `\n\nالتفصيل حسب كل جزء:\n${breakdown.join('\n')}` : ''}\n\nمهم: هذه أرقام تقديرية وليست خسارة محققة؛ مبنية على ما أمكن رصده علنًا وافتراضات متوسط قيمة العميل وحجم الـleads. وعدم ظهور أداة Tracking في الفحص العام لا يعني بالضرورة أنها غير مركبة.\n\nأنا ما أرسل لكم عرض تسويق عام. عندي المراجعة نفسها، وأقدر أوريكم بالضبط إيش ظهر وإيش يحتاج تحقق أعمق وإيش الأولوية.\n\n${bookingUrl ? `إذا حابين نشوفها سوا، هذا رابط موعد قصير:\n${bookingUrl}\n\n` : ''}محمد\nSahab Agency`;
 
-  return {
+  return withQuality({
     subject: annual.high > 0
       ? `${lead.name}: فرصة تحسين تقديرية قد تصل إلى ${money(annual.high)} ريال سنويًا`
       : `${lead.name}: مراجعة نمو سريعة`,
@@ -64,7 +71,7 @@ function fallbackMessage({ lead, audit, bookingUrl }) {
     generatedBy: 'rules',
     evidenceUsed: issues,
     requiresReview: true
-  };
+  }, { audit, bookingUrl });
 }
 
 async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
@@ -76,7 +83,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
     input: [
       {
         role: 'system',
-        content: 'Write a concise Arabic B2B outbound email for a Saudi/Gulf business in a natural professional tone. Lead with an estimated improvement/opportunity range, then show a short service-by-service breakdown. Use only provided public evidence. Never state revenue loss as a verified fact. Never say a tracking tool, Meta Pixel, analytics tag, booking path, or conversion feature is definitely absent unless the evidence explicitly proves absence. If the public scan only failed to detect it, say لم يظهر لنا في الفحص العام / لم نتمكن من رصده publicly. If audit confidence is below 50 or auditMode is presence_only, explicitly call the number a conservative benchmark estimate and do not frame it as a direct business loss. Do not invent traffic, spend, rankings, leads, revenue, or customer behavior. Avoid generic praise. If a booking URL is provided, include it exactly once near the end. Output valid JSON with subject and body only.'
+        content: 'Write a concise Arabic B2B outbound email for a Saudi/Gulf business in a natural professional tone. Lead with an estimated improvement/opportunity range, then show a short service-by-service breakdown. Use only provided public evidence. Never state revenue loss as a verified fact. Never say a tracking tool, Meta Pixel, analytics tag, booking path, or conversion feature is definitely absent unless the evidence explicitly proves absence. If the public scan only failed to detect it, say لم يظهر لنا في الفحص العام / لم نتمكن من رصده publicly. If audit confidence is below 50 or auditMode is presence_only, explicitly call the number a conservative benchmark estimate and do not frame it as a direct business loss. Do not invent traffic, spend, rankings, leads, revenue, or customer behavior. Do not use guarantees, hype, emojis, or spammy urgency. Keep the subject under 90 characters if possible. If a booking URL is provided, include it exactly once near the end. Output valid JSON with subject and body only.'
       },
       {
         role: 'user',
@@ -88,11 +95,13 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
           industry,
           location,
           auditMode: audit.auditMode,
+          qualification: audit.qualification,
           contactRoute: lead.contactRoute,
           socials: lead.socials,
           auditScore: audit.score,
           issues: audit.issues,
           evidence: audit.evidence,
+          commercialProfile: audit.commercialProfile,
           opportunityEstimate: audit.opportunity,
           opportunityBreakdown: audit.opportunityBreakdown,
           bookingUrl
@@ -117,7 +126,7 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
   try {
     const parsed = JSON.parse(cleaned);
     if (!parsed.subject || !parsed.body) return null;
-    return {
+    const candidate = withQuality({
       subject: parsed.subject,
       body: ensureBookingLink(parsed.body, bookingUrl),
       channel: lead.contactRoute?.channel || (lead.contactEmail ? 'email' : 'research_required'),
@@ -125,12 +134,16 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
       generatedBy: 'openai',
       evidenceUsed: topIssues(audit),
       requiresReview: true
-    };
+    }, { audit, bookingUrl });
+    return candidate.quality.ok ? candidate : null;
   } catch {
     return null;
   }
 }
 
 export async function buildOutreach(args) {
-  return (await viaOpenAI(args).catch(() => null)) || fallbackMessage(args);
+  const ai = await viaOpenAI(args).catch(() => null);
+  if (ai) return ai;
+  const fallback = fallbackMessage(args);
+  return { ...fallback, generatedBy: ai ? 'openai' : fallback.generatedBy, qualityFallback: !ai };
 }
