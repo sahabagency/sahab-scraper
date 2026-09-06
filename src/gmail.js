@@ -96,7 +96,7 @@ export async function verifyGmailConnection() {
   return { emailAddress: data.emailAddress, messagesTotal: data.messagesTotal, threadsTotal: data.threadsTotal };
 }
 
-export async function sendGmail({ to, subject, body, html = null, replyToMessageId = null }) {
+export async function sendGmail({ to, subject, body, html = null, replyToMessageId = null, unsubscribeUrl = null }) {
   const token = await getGoogleAccessToken();
   const headers = [
     `To: ${to}`,
@@ -104,6 +104,10 @@ export async function sendGmail({ to, subject, body, html = null, replyToMessage
     'MIME-Version: 1.0'
   ];
   if (replyToMessageId) headers.push(`In-Reply-To: ${replyToMessageId}`, `References: ${replyToMessageId}`);
+  if (unsubscribeUrl) {
+    headers.push(`List-Unsubscribe: <${unsubscribeUrl}>`);
+    headers.push('List-Unsubscribe-Post: List-Unsubscribe=One-Click');
+  }
 
   let message;
   if (html) {
