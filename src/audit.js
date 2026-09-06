@@ -20,19 +20,48 @@ function containsAny(text, words) {
   return words.some(word => haystack.includes(word));
 }
 
-function opportunityEstimate(score, assumptions = {}) {
+function opportunityEstimate(score, assumptions = {}, context = {}) {
   const averageTicket = Number(assumptions.averageTicket) || 2500;
   const monthlyLeadEstimate = Number(assumptions.monthlyLeadEstimate) || 40;
-  const gap = Math.max(0, 100 - score) / 100;
-  const recoverableRateLow = Math.min(0.18, gap * 0.16);
-  const recoverableRateHigh = Math.min(0.35, gap * 0.30);
-  const low = Math.round(monthlyLeadEstimate * recoverableRateLow * averageTicket);
-  const high = Math.round(monthlyLeadEstimate * recoverableRateHigh * averageTicket);
+  const monthlyCommercialValue = averageTicket * monthlyLeadEstimate;
+
+  let lowRate;
+  let highRate;
+  let confidence;
+  let method;
+
+  if (context.noWebsite) {
+    lowRate = 0.04;
+    highRate = 0.10;
+    confidence = 35;
+    method = 'benchmark_no_website';
+  } else if (context.unreachableWebsite) {
+    lowRate = 0.05;
+    highRate = 0.12;
+    confidence = 40;
+    method = 'benchmark_unreachable_website';
+  } else {
+    const gap = Math.max(0, 100 - score) / 100;
+    lowRate = Math.min(0.16, gap * 0.16);
+    highRate = Math.min(0.30, gap * 0.30);
+    confidence = Math.max(55, Math.min(92, 95 - Math.round(gap * 35)));
+    method = 'observed_site_gap_model';
+  }
+
+  const low = Math.round(monthlyCommercialValue * lowRate);
+  const high = Math.round(monthlyCommercialValue * highRate);
   return {
     monthlyRange: { low, high },
     annualRange: { low: low * 12, high: high * 12 },
     assumptions: { averageTicket, monthlyLeadEstimate },
-    disclaimer: 'Estimated missed opportunity, not verified lost revenue. Derived from public evidence and stated commercial assumptions.'
+    confidence,
+    method,
+    basis: context.noWebsite
+      ? 'No website was found in Google Places or public discovery. The estimate uses a conservative benchmark band against the stated monthly lead value.'
+      : context.unreachableWebsite
+        ? 'The linked website could not be loaded. The estimate uses a conservative benchmark band against the stated monthly lead value.'
+        : 'Estimate derived from observable public-site gaps and the stated average ticket and monthly lead assumptions.',
+    disclaimer: 'Estimated missed opportunity, not verified lost revenue.'
   };
 }
 
@@ -69,23 +98,29 @@ export async function auditLead(lead, assumptions = {}) {
   const result = {
     website: lead.website || null,
     checkedAt: new Date().toISOString(),
-    score: 0,
+    score: null,
     signals: {},
     issues: [],
     wins: [],
     opportunity: null,
     opportunityBreakdown: [],
-    evidence: {}
+    evidence: {},
+    auditMode: lead.website ? 'website' : 'presence_only'
   };
 
   if (!lead.website) {
-    result.issues.push({ severity: 'high', title: 'No website found', detail: 'Google Places did not return a website for this business.', service: 'Website & Conversion' });
-    result.opportunity = opportunityEstimate(20, assumptions);
+    result.issues.push({ severity: 'high', title: 'No website found', detail: 'Google Places and current public discovery did not return a verified business website.', service: 'Website & Conversion' });
+    result.opportunity = opportunityEstimate(null, assumptions, { noWebsite: true });
     result.opportunityBreakdown = [{
       service: 'Website & Conversion',
-      issues: ['No website found'],
+      issues: ['No verified website found'],
       annualRange: result.opportunity.annualRange
     }];
+    result.evidence = {
+      googleRating: lead.rating || null,
+      reviewCount: lead.reviewCount || null,
+      contactRoute: lead.contactRoute || null
+    };
     return result;
   }
 
@@ -101,7 +136,7 @@ export async function auditLead(lead, assumptions = {}) {
   } catch (error) {
     result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical' });
     result.signals.loads = false;
-    result.opportunity = opportunityEstimate(10, assumptions);
+    result.opportunity = opportunityEstimate(null, assumptions, { unreachableWebsite: true });
     result.opportunityBreakdown = [{
       service: 'Website Trust & Technical',
       issues: ['Website could not be loaded'],
