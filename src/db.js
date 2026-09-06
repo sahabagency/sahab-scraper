@@ -65,6 +65,10 @@ export async function dueFollowups(limit = 20) {
   return rpc('lead_engine_due_followups', { p_limit: limit });
 }
 
+export async function replyCandidates(limit = 100) {
+  return rpc('lead_engine_reply_candidates', { p_limit: limit });
+}
+
 export async function suppressEmail(email, reason = 'manual') {
   return rpc('lead_engine_suppress', { p_email: email, p_reason: reason });
 }
