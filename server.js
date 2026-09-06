@@ -6,7 +6,7 @@ import { discoverLeads } from './src/discover.js';
 import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
-import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus } from './src/gmail.js';
+import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus, verifyGmailConnection } from './src/gmail.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -33,6 +33,15 @@ app.get('/api/config', (_req, res) => {
     gmailConnected: gmail.connected,
     bookingUrl: process.env.CALENDAR_BOOKING_URL || ''
   });
+});
+
+app.get('/api/gmail/verify', async (_req, res) => {
+  try {
+    const profile = await verifyGmailConnection();
+    res.json({ ok: true, connected: true, emailAddress: profile.emailAddress });
+  } catch (error) {
+    res.status(400).json({ ok: false, connected: false, error: error.message || 'Gmail verification failed' });
+  }
 });
 
 app.get('/auth/google', (_req, res) => {
