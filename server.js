@@ -6,6 +6,7 @@ import { discoverLeads } from './src/discover.js';
 import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
+import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus } from './src/gmail.js';
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
@@ -22,13 +23,35 @@ app.get('/health', (_req, res) => {
 });
 
 app.get('/api/config', (_req, res) => {
+  const gmail = gmailStatus();
   res.json({
     googlePlacesReady: Boolean(process.env.GOOGLE_MAPS_API_KEY),
     openAiReady: Boolean(process.env.OPENAI_API_KEY),
     bookingUrlReady: Boolean(process.env.CALENDAR_BOOKING_URL),
     webDiscoveryReady: Boolean(process.env.BRAVE_SEARCH_API_KEY),
+    gmailOauthReady: gmail.oauthConfigured,
+    gmailConnected: gmail.connected,
     bookingUrl: process.env.CALENDAR_BOOKING_URL || ''
   });
+});
+
+app.get('/auth/google', (_req, res) => {
+  try {
+    res.redirect(createGoogleAuthUrl());
+  } catch (error) {
+    res.status(500).send(`Gmail OAuth setup error: ${String(error.message || error)}`);
+  }
+});
+
+app.get('/auth/google/callback', async (req, res) => {
+  try {
+    const tokens = await exchangeGoogleCode({ code: req.query.code, state: req.query.state });
+    const refreshToken = tokens.refresh_token;
+    const safeToken = String(refreshToken).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    res.type('html').send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Gmail connected</title><style>body{font-family:Arial,sans-serif;background:#111;color:#f5f0df;padding:40px}.card{max-width:760px;margin:auto;background:#1b1a16;border:1px solid #4b4638;border-radius:20px;padding:28px}textarea{width:100%;min-height:110px;background:#0d0d0c;color:#f5f0df;border:1px solid #5b5443;border-radius:12px;padding:12px}code{color:#e9c65a}</style></head><body><div class="card"><h1>Gmail OAuth approved</h1><p>الربط نجح. عشان يظل النظام شغال بعد أي Restart، انسخ القيمة التالية مرة واحدة وحطها في Railway باسم <code>GMAIL_REFRESH_TOKEN</code>. لا ترسلها في المحادثة.</p><textarea readonly onclick="this.select()">${safeToken}</textarea><p>بعد إضافتها في Railway وحفظها، ارجع للواجهة. حالة Gmail بتتحول إلى Connected.</p></div></body></html>`);
+  } catch (error) {
+    res.status(400).type('html').send(`<h2>Gmail OAuth failed</h2><pre>${String(error.message || error)}</pre>`);
+  }
 });
 
 app.post('/api/campaigns', async (req, res) => {
