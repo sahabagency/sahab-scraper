@@ -32,28 +32,31 @@ async function loadConfig() {
     ['DB', config.persistenceReady && !config.persistenceStats?.error]
   ];
   const statusHtml = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('');
-  let gmailHtml = config.gmailOauthReady
-    ? '<a href="/auth/google" style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid #d7bd68;border-radius:999px;color:#f2d66d;text-decoration:none;font-weight:700">Connect Gmail ↗</a>'
-    : '<span>Gmail ○</span>';
+  let gmailHtml = config.gmailOauthReady ? '<a href="/auth/google" style="display:inline-flex;align-items:center;gap:6px;padding:7px 11px;border:1px solid #d7bd68;border-radius:999px;color:#f2d66d;text-decoration:none;font-weight:700">Connect Google ↗</a>' : '<span>Gmail ○</span>';
+  let calendarHtml = '<span>Calendar ○</span>';
 
   if (config.gmailConnected) {
     try {
-      const response = await fetch('/api/gmail/verify', { cache: 'no-store' });
-      const verified = await response.json();
-      gmailHtml = verified.ok
-        ? `<span class="ready" title="${esc(verified.emailAddress || '')}">Gmail ●</span>`
-        : '<span title="OAuth token needs attention">Gmail !</span>';
+      const [gmailResponse, calendarResponse] = await Promise.all([
+        fetch('/api/gmail/verify', { cache: 'no-store' }),
+        fetch('/api/calendar/verify', { cache: 'no-store' })
+      ]);
+      const gmail = await gmailResponse.json();
+      const calendar = await calendarResponse.json();
+      gmailHtml = gmail.ok ? `<span class="ready" title="${esc(gmail.emailAddress || '')}">Gmail ●</span>` : '<span title="OAuth token needs attention">Gmail !</span>';
+      calendarHtml = calendar.ok ? '<span class="ready">Calendar ●</span>' : '<span title="Calendar permission needs attention">Calendar !</span>';
     } catch {
-      gmailHtml = '<span title="Could not verify Gmail right now">Gmail ?</span>';
+      gmailHtml = '<span>Gmail ?</span>';
+      calendarHtml = '<span>Calendar ?</span>';
     }
   }
 
   const outbound = config.outbound || {};
   const outboundHtml = outbound.enabled
     ? `<span class="ready" title="Daily limit ${esc(outbound.dailyLimit || 0)} · review ${outbound.requireReview ? 'required' : 'off'}">Send ●</span>`
-    : '<span title="Sending is intentionally locked until first batch approval">Send 🔒</span>';
+    : '<span title="Sending is intentionally locked until the first batch is explicitly approved">Send 🔒</span>';
 
-  configEl.innerHTML = `${statusHtml}${gmailHtml}${outboundHtml}`;
+  configEl.innerHTML = `${statusHtml}${gmailHtml}${calendarHtml}${outboundHtml}`;
   if (config.bookingUrl && form && !form.bookingUrl.value) form.bookingUrl.value = config.bookingUrl;
 }
 
@@ -69,11 +72,15 @@ function renderLiveScan(data) {
     const low = Math.round((item.annualRange?.low || 0) / 12);
     return `<div class="leak-row"><div><h3>${esc(item.service)}</h3><p>${esc((item.issues || []).join(' · '))}</p></div><div class="leak-value">−${money(high)}<small>${money(low)}–${money(high)} /mo est.</small></div></div>`;
   }).join('');
+  const emailPreview = data.emailHtml
+    ? `<details class="outreach-preview" open><summary>Exact email design that will be sent</summary><p><strong>${esc(data.outreach?.subject || '')}</strong></p><iframe title="Email preview" style="width:100%;height:760px;border:1px solid #3a362d;border-radius:16px;background:#fff" sandbox="" srcdoc="${esc(data.emailHtml)}"></iframe><details><summary>Plain-text fallback</summary><pre>${esc(data.outreach?.body || '')}</pre></details></details>`
+    : `<details class="outreach-preview"><summary>Exact outreach email preview</summary><p><strong>${esc(data.outreach?.subject || '')}</strong></p><pre>${esc(data.outreach?.body || '')}</pre></details>`;
+
   scanResult.innerHTML = `<div class="scan-result-card">
     <div class="business-line"><div><h2>${esc(lead.name || nameFromUrl(lead.website || 'Business'))}</h2><div class="business-meta">${lead.website ? `<a href="${esc(lead.website)}" target="_blank" style="color:#d7bd68">${esc(lead.website)}</a>` : 'public business scan'}${route.channel ? ` · best contact: ${esc(route.channel)}` : ''}</div></div><div class="confidence">estimate confidence<b>${money(confidence)}%</b></div></div>
     <div class="leak-box"><div class="label">ESTIMATED MONTHLY REVENUE LEAK</div><div class="amount">${money(monthly.high)}</div><div class="range">est. range ${money(monthly.low)} – ${money(monthly.high)} / mo · assumption-based estimate</div></div>
     ${rows || '<div class="leak-row"><div><h3>No major leak detected</h3><p>The current public checks did not produce a service breakdown.</p></div><div class="leak-value">0<small>/mo est.</small></div></div>'}
-    <details class="outreach-preview"><summary>Exact outreach email preview</summary><p><strong>${esc(data.outreach?.subject || '')}</strong></p><pre>${esc(data.outreach?.body || '')}</pre></details>
+    ${emailPreview}
   </div>`;
 }
 
