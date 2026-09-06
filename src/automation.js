@@ -1,5 +1,6 @@
 import { findReplies } from './gmail.js';
-import { dbConfigured, replyCandidates, markReplied, dueFollowups } from './db.js';
+import { findCalendarBookingByEmail } from './calendar.js';
+import { dbConfigured, replyCandidates, markReplied, dueFollowups, bookingCandidates, markBooked } from './db.js';
 
 let running = false;
 let lastRunAt = null;
@@ -22,7 +23,25 @@ export async function runReplyAndFollowupCheck() {
         replies.push({ leadId: lead.id, email: lead.email, messageId: found[0].id || null });
       }
     }
+
     const followups = await dueFollowups(50);
+    const bookings = [];
+    let calendarError = null;
+    try {
+      const bookingLeads = await bookingCandidates(200);
+      for (const lead of bookingLeads || []) {
+        const timeMin = lead.sentAt ? new Date(lead.sentAt).toISOString() : new Date(Date.now() - 30 * 86400000).toISOString();
+        const event = await findCalendarBookingByEmail({ email: lead.email, timeMin, timeMax: new Date(Date.now() + 90 * 86400000).toISOString() });
+        if (event) {
+          const startAt = event.start?.dateTime || event.start?.date || null;
+          await markBooked(lead.id, event.id || null, startAt);
+          bookings.push({ leadId: lead.id, email: lead.email, eventId: event.id || null, startAt });
+        }
+      }
+    } catch (error) {
+      calendarError = error.message || String(error);
+    }
+
     lastRunAt = new Date().toISOString();
     lastResult = {
       ok: true,
@@ -31,6 +50,9 @@ export async function runReplyAndFollowupCheck() {
       replies,
       followupsDue: followups?.length || 0,
       followups,
+      bookingsDetected: bookings.length,
+      bookings,
+      calendarError,
       durationMs: Date.now() - startedAt.getTime()
     };
     lastError = null;
@@ -52,7 +74,7 @@ export function startAutomationLoop() {
   const intervalMs = Math.max(60 * 60 * 1000, Number(process.env.AUTOMATION_INTERVAL_MS || 60 * 60 * 1000));
   const timer = setInterval(() => {
     runReplyAndFollowupCheck().then(result => {
-      if (!result?.skipped) console.log('[AUTOMATION] reply/followup check', JSON.stringify({ checked: result.checked, repliesDetected: result.repliesDetected, followupsDue: result.followupsDue }));
+      if (!result?.skipped) console.log('[AUTOMATION] lifecycle check', JSON.stringify({ checked: result.checked, repliesDetected: result.repliesDetected, followupsDue: result.followupsDue, bookingsDetected: result.bookingsDetected, calendarError: result.calendarError || null }));
     }).catch(error => console.error('[AUTOMATION] check failed', error.message || error));
   }, intervalMs);
   timer.unref?.();
