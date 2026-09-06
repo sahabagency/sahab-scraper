@@ -8,7 +8,11 @@ const SOCIAL_DOMAINS = {
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const STOP = new Set(['the','and','clinic','clinics','center','centre','company','co','llc','ltd','saudi','arabia','riyadh','jeddah','dubai','ksa']);
-const BAD_SOCIAL_PATHS = ['/popular/', '/explore/', '/search', '/hashtag/', '/topics/', '/directory/'];
+const BAD_SOCIAL_PATHS = [
+  '/popular/', '/explore/', '/search', '/hashtag/', '/topics/', '/directory/',
+  '/reel/', '/reels/', '/p/', '/tv/', '/stories/', '/story/', '/shorts/', '/watch/',
+  '/posts/', '/post/', '/status/', '/video/', '/videos/'
+];
 
 function tokens(value = '') {
   return [...new Set(String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(x => x.length > 2 && !STOP.has(x)))];
@@ -22,7 +26,7 @@ function similarity(text, lead, location) {
   const locHits = locationTokens.filter(t => hay.includes(t)).length;
   const nameScore = nameTokens.length ? nameHits / nameTokens.length : 0;
   const locScore = locationTokens.length ? Math.min(1, locHits / Math.min(2, locationTokens.length)) : 0;
-  return Math.round((nameScore * 80) + (locScore * 20));
+  return Math.round((nameScore * 82) + (locScore * 18));
 }
 
 function channelFromUrl(url = '') {
@@ -33,13 +37,25 @@ function channelFromUrl(url = '') {
   return null;
 }
 
-function isDirectSocialProfile(url = '') {
+function isDirectSocialProfile(url = '', channel = '') {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname.toLowerCase();
+    if (!path || path === '/') return false;
     if (BAD_SOCIAL_PATHS.some(p => path.includes(p))) return false;
     const segments = path.split('/').filter(Boolean);
-    return segments.length >= 1 && segments.length <= 3;
+    if (!segments.length || segments.length > 3) return false;
+
+    if (channel === 'linkedin') {
+      return ['company', 'in', 'school', 'showcase'].includes(segments[0]) && segments.length >= 2;
+    }
+    if (channel === 'instagram' || channel === 'tiktok' || channel === 'x') {
+      return segments.length === 1;
+    }
+    if (channel === 'facebook') {
+      return segments.length <= 2;
+    }
+    return true;
   } catch {
     return false;
   }
@@ -81,7 +97,8 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
   const baseQuery = `\"${lead.name}\" ${location || lead.address || ''}`.trim();
   const queries = [
     `${baseQuery} contact email`,
-    `${baseQuery} Instagram Facebook LinkedIn`,
+    `${baseQuery} official website`,
+    `${baseQuery} official Instagram Facebook LinkedIn`,
     `${baseQuery} official Instagram`,
     `${baseQuery} official LinkedIn`
   ];
@@ -95,23 +112,23 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
   const socials = {};
   for (const result of all) {
     const channel = channelFromUrl(result.url);
-    if (!channel || !isDirectSocialProfile(result.url)) continue;
+    if (!channel || !isDirectSocialProfile(result.url, channel)) continue;
     const confidence = similarity(`${result.title} ${result.description} ${result.url}`, lead, location);
-    if (confidence < 75) continue;
+    if (confidence < 80) continue;
     const current = socials[channel];
     if (!current || confidence > current.confidence) {
       socials[channel] = { url: result.url, confidence, source: 'brave_web_search' };
     }
   }
 
-  const emailCandidates = collectEmails(all, lead, location).filter(x => x.confidence >= 75);
+  const emailCandidates = collectEmails(all, lead, location).filter(x => x.confidence >= 80);
   const uniqueEvidence = [];
   const seen = new Set();
   for (const r of all) {
     if (seen.has(r.url)) continue;
     seen.add(r.url);
     const confidence = similarity(`${r.title} ${r.description} ${r.url}`, lead, location);
-    if (confidence >= 70) uniqueEvidence.push({ title: r.title, url: r.url, confidence, query: r.query });
+    if (confidence >= 75) uniqueEvidence.push({ title: r.title, url: r.url, confidence, query: r.query });
   }
 
   return {
