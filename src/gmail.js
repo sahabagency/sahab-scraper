@@ -3,7 +3,8 @@ import crypto from 'crypto';
 const pendingStates = new Map();
 const OAUTH_SCOPE = [
   'https://www.googleapis.com/auth/gmail.send',
-  'https://www.googleapis.com/auth/gmail.readonly'
+  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/calendar.readonly'
 ].join(' ');
 
 function base64url(input) {
@@ -68,7 +69,7 @@ export async function exchangeGoogleCode({ code, state }) {
   return data;
 }
 
-async function accessTokenFromRefreshToken() {
+export async function getGoogleAccessToken() {
   if (!process.env.GMAIL_REFRESH_TOKEN) throw new Error('GMAIL_REFRESH_TOKEN is not configured');
   const body = new URLSearchParams({
     client_id: process.env.GMAIL_CLIENT_ID,
@@ -83,12 +84,12 @@ async function accessTokenFromRefreshToken() {
     signal: AbortSignal.timeout(15000)
   });
   const data = await response.json();
-  if (!response.ok || !data.access_token) throw new Error(data.error_description || data.error || 'Could not refresh Gmail access token');
+  if (!response.ok || !data.access_token) throw new Error(data.error_description || data.error || 'Could not refresh Google access token');
   return data.access_token;
 }
 
 export async function verifyGmailConnection() {
-  const token = await accessTokenFromRefreshToken();
+  const token = await getGoogleAccessToken();
   const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
     headers: { authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(15000)
@@ -99,7 +100,7 @@ export async function verifyGmailConnection() {
 }
 
 export async function sendGmail({ to, subject, body, replyToMessageId = null }) {
-  const token = await accessTokenFromRefreshToken();
+  const token = await getGoogleAccessToken();
   const headers = [
     `To: ${to}`,
     `Subject: =?UTF-8?B?${Buffer.from(subject, 'utf8').toString('base64')}?=`,
@@ -121,7 +122,7 @@ export async function sendGmail({ to, subject, body, replyToMessageId = null }) 
 
 export async function findReplies({ fromEmail, afterUnix = 0, maxResults = 10 }) {
   if (!fromEmail) return [];
-  const token = await accessTokenFromRefreshToken();
+  const token = await getGoogleAccessToken();
   const q = [`from:${fromEmail}`];
   if (afterUnix) q.push(`after:${Math.floor(afterUnix)}`);
   const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
