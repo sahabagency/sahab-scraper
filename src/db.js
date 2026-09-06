@@ -61,12 +61,20 @@ export async function markReplied(leadId, messageId = null) {
   return rpc('lead_engine_mark_replied', { p_lead_id: leadId, p_message_id: messageId });
 }
 
+export async function markBooked(leadId, eventId = null, startAt = null) {
+  return rpc('lead_engine_mark_booked', { p_lead_id: leadId, p_event_id: eventId, p_start_at: startAt });
+}
+
 export async function dueFollowups(limit = 20) {
   return rpc('lead_engine_due_followups', { p_limit: limit });
 }
 
 export async function replyCandidates(limit = 100) {
   return rpc('lead_engine_reply_candidates', { p_limit: limit });
+}
+
+export async function bookingCandidates(limit = 200) {
+  return rpc('lead_engine_booking_candidates', { p_limit: limit });
 }
 
 export async function suppressEmail(email, reason = 'manual') {
