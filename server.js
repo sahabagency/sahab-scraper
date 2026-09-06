@@ -7,6 +7,7 @@ import { discoverLeads } from './src/discover.js';
 import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
+import { qualifyLead, statusForQualification } from './src/qualification.js';
 import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus, verifyGmailConnection, sendGmail } from './src/gmail.js';
 import { verifyCalendarConnection } from './src/calendar.js';
 import { buildXrayEmailHtml } from './src/emailTemplate.js';
@@ -100,15 +101,25 @@ app.post('/api/campaigns', async (req, res) => {
     const audited = [];
     for (const rawLead of rawLeads) {
       const lead = await enrichLeadContact(rawLead, { location });
-      const audit = await auditLead(lead, { averageTicket: campaign.averageTicket, monthlyLeadEstimate: campaign.monthlyLeadEstimate });
+      const audit = await auditLead(lead, { averageTicket: campaign.averageTicket, monthlyLeadEstimate: campaign.monthlyLeadEstimate, industry });
+      const qualification = qualifyLead({ lead, audit });
+      audit.qualification = qualification;
       const outreach = await buildOutreach({ lead, audit, bookingUrl: campaign.bookingUrl, industry, location });
-      const fullLead = { ...lead, audit, outreach, status: lead.contactEmail ? 'ready_to_send' : 'needs_contact' };
+      const fullLead = { ...lead, audit, outreach, qualification, status: statusForQualification(lead, qualification) };
       if (dbConfigured()) fullLead.id = await saveLead(campaign.id, fullLead);
       audited.push(fullLead);
     }
 
+    audited.sort((a, b) => (b.qualification?.score || 0) - (a.qualification?.score || 0));
     campaign.leads = audited;
     campaign.status = 'ready';
+    campaign.qualificationSummary = {
+      A: audited.filter(x => x.qualification?.tier === 'A').length,
+      B: audited.filter(x => x.qualification?.tier === 'B').length,
+      C: audited.filter(x => x.qualification?.tier === 'C').length,
+      REJECT: audited.filter(x => x.qualification?.tier === 'REJECT').length,
+      sendEligible: audited.filter(x => x.qualification?.sendEligible).length
+    };
     if (dbConfigured()) await saveCampaign(campaign);
     res.json(campaign);
   } catch (error) {
@@ -142,11 +153,14 @@ app.post('/api/leads/audit', async (req, res) => {
     const inputLead = req.body?.lead;
     if (!inputLead?.website && !inputLead?.name) return res.status(400).json({ error: 'lead.name or lead.website is required' });
     const location = req.body?.location || '';
+    const industry = req.body?.industry || '';
     const lead = await enrichLeadContact(inputLead, { location });
-    const audit = await auditLead(lead, req.body?.assumptions || {});
-    const outreach = await buildOutreach({ lead, audit, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '', industry: req.body?.industry || '', location });
+    const audit = await auditLead(lead, { ...(req.body?.assumptions || {}), industry });
+    const qualification = qualifyLead({ lead, audit });
+    audit.qualification = qualification;
+    const outreach = await buildOutreach({ lead, audit, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '', industry, location });
     const emailHtml = buildXrayEmailHtml({ name: lead.name, website: lead.website, audit, body: outreach.body, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '' });
-    res.json({ lead, audit, outreach, emailHtml });
+    res.json({ lead, audit, qualification, outreach, emailHtml });
   } catch (error) { res.status(500).json({ error: error.message || 'Audit failed' }); }
 });
 
@@ -198,13 +212,16 @@ async function runStartupSelfTest() {
   try {
     console.log('[SELFTEST] starting Riyadh aesthetic clinics dry-run (no email send)');
     const location = 'Riyadh, Saudi Arabia';
-    const leads = await discoverLeads({ industry: 'aesthetic clinics', location, limit: 3 });
+    const industry = 'aesthetic clinics';
+    const leads = await discoverLeads({ industry, location, limit: 3 });
     const results = [];
     for (const rawLead of leads) {
       const lead = await enrichLeadContact(rawLead, { location });
-      const audit = await auditLead(lead, { averageTicket: 2500, monthlyLeadEstimate: 40 });
-      const outreach = await buildOutreach({ lead, audit, bookingUrl: process.env.CALENDAR_BOOKING_URL || '', industry: 'aesthetic clinics', location });
-      results.push({ name: lead.name, website: lead.website || null, contactEmail: lead.contactEmail || null, score: audit.score, opportunity: audit.opportunity?.annualRange || null, generatedBy: outreach.generatedBy || null, subject: outreach.subject, bookingLinkIncluded: Boolean(process.env.CALENDAR_BOOKING_URL && outreach.body?.includes(process.env.CALENDAR_BOOKING_URL)) });
+      const audit = await auditLead(lead, { averageTicket: 2500, monthlyLeadEstimate: 40, industry });
+      const qualification = qualifyLead({ lead, audit });
+      audit.qualification = qualification;
+      const outreach = await buildOutreach({ lead, audit, bookingUrl: process.env.CALENDAR_BOOKING_URL || '', industry, location });
+      results.push({ name: lead.name, website: lead.website || null, contactEmail: lead.contactEmail || null, score: audit.score, qualification: { tier: qualification.tier, score: qualification.score }, opportunity: audit.opportunity?.annualRange || null, generatedBy: outreach.generatedBy || null, subject: outreach.subject, bookingLinkIncluded: Boolean(process.env.CALENDAR_BOOKING_URL && outreach.body?.includes(process.env.CALENDAR_BOOKING_URL)) });
     }
     console.log('[SELFTEST] SUCCESS ' + JSON.stringify({ count: results.length, durationMs: Date.now() - startedAt, results }));
   } catch (error) { console.error('[SELFTEST] FAILED ' + JSON.stringify({ durationMs: Date.now() - startedAt, error: error?.message || String(error) })); }
