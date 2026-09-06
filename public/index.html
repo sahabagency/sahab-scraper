@@ -8,35 +8,46 @@
 </head>
 <body>
   <main class="wrap">
-    <section class="hero">
-      <div>
-        <p class="eyebrow">SAHAB AGENCY</p>
-        <h1>X-Ray Lead Engine</h1>
-        <p>Discover businesses, audit revenue-conversion gaps, and generate personalized outreach with your booking link.</p>
-      </div>
-      <div id="config" class="status-card">Checking integrations…</div>
+    <section class="intro">
+      <p class="eyebrow">TRY IT YOURSELF</p>
+      <h1>Scan any business, <em>right now.</em></h1>
+      <p class="intro-copy">Public-data audit for conversion leaks, contact paths and a personalized outreach angle.</p>
     </section>
 
-    <section class="panel">
-      <h2>New campaign</h2>
-      <form id="campaign-form" class="grid">
-        <label>Campaign name<input name="name" placeholder="Riyadh Clinics — Sep" /></label>
-        <label>Industry<input name="industry" placeholder="Aesthetic clinics" required /></label>
-        <label>Location<input name="location" placeholder="Riyadh, Saudi Arabia" required /></label>
-        <label>Lead count<input name="limit" type="number" value="10" min="1" max="60" /></label>
-        <label>Average ticket<input name="averageTicket" type="number" value="2500" min="1" /></label>
-        <label>Estimated monthly leads<input name="monthlyLeadEstimate" type="number" value="40" min="1" /></label>
-        <label class="full">Booking URL<input name="bookingUrl" placeholder="https://calendar.google.com/..." /></label>
-        <button type="submit">Run discovery + audits</button>
+    <section class="scanner-shell">
+      <div class="scanner-head">
+        <div><strong>XRAY</strong><span>LIVE LEAK SCANNER</span></div>
+        <div id="config" class="scanner-status">Checking integrations…</div>
+      </div>
+
+      <form id="scan-form" class="scan-bar">
+        <div class="traffic"><i></i><i></i><i></i></div>
+        <input name="website" placeholder="examplebusiness.com" autocomplete="off" required />
+        <button type="submit">⚡ Scan</button>
       </form>
-      <p id="run-status" class="muted"></p>
+      <p id="scan-status" class="scan-note">Live scan · public data only · figures are estimates</p>
+      <div id="scan-result"></div>
     </section>
 
-    <section class="panel">
-      <div class="section-head">
-        <h2>Campaign results</h2>
-        <span id="count" class="badge">0 leads</span>
-      </div>
+    <details class="campaign-drawer">
+      <summary>Run a full lead campaign</summary>
+      <section class="panel">
+        <form id="campaign-form" class="grid">
+          <label>Campaign name<input name="name" placeholder="Riyadh Clinics — Sep" /></label>
+          <label>Industry<input name="industry" placeholder="Aesthetic clinics" required /></label>
+          <label>Location<input name="location" placeholder="Riyadh, Saudi Arabia" required /></label>
+          <label>Lead count<input name="limit" type="number" value="10" min="1" max="60" /></label>
+          <label>Average ticket<input name="averageTicket" type="number" value="2500" min="1" /></label>
+          <label>Estimated monthly leads<input name="monthlyLeadEstimate" type="number" value="40" min="1" /></label>
+          <label class="full">Booking URL<input name="bookingUrl" placeholder="https://calendar.google.com/..." /></label>
+          <button type="submit">Run discovery + audits</button>
+        </form>
+        <p id="run-status" class="muted"></p>
+      </section>
+    </details>
+
+    <section class="campaign-results-wrap">
+      <div class="section-head"><h2>Campaign results</h2><span id="count" class="badge">0 leads</span></div>
       <div id="results" class="results empty">Run a campaign to see audited leads.</div>
     </section>
   </main>
