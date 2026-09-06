@@ -8,6 +8,7 @@ import { enrichLeadContact } from './src/enrich.js';
 import { auditLead } from './src/audit.js';
 import { buildOutreach } from './src/outreach.js';
 import { qualifyLead, statusForQualification } from './src/qualification.js';
+import { createUnsubscribeToken, verifyUnsubscribeToken } from './src/unsubscribe.js';
 import { createGoogleAuthUrl, exchangeGoogleCode, gmailStatus, verifyGmailConnection, sendGmail } from './src/gmail.js';
 import { verifyCalendarConnection } from './src/calendar.js';
 import { buildXrayEmailHtml } from './src/emailTemplate.js';
@@ -24,6 +25,12 @@ app.use(express.json({ limit: '1mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const campaigns = new Map();
+
+function requestBaseUrl(req) {
+  const forwardedProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const protocol = forwardedProto || req.protocol || 'https';
+  return `${protocol}://${req.get('host')}`;
+}
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'Sahab X-Ray Lead Engine', persistence: dbConfigured() ? 'supabase' : 'memory', now: new Date().toISOString() });
@@ -83,6 +90,21 @@ app.get('/auth/google/callback', async (req, res) => {
     res.status(400).type('html').send(`<h2>Google OAuth failed</h2><pre>${String(error.message || error)}</pre>`);
   }
 });
+
+async function handleUnsubscribe(req, res, oneClick = false) {
+  try {
+    if (!dbConfigured()) return res.status(503).send('Suppression service unavailable');
+    const payload = verifyUnsubscribeToken(req.query.t || req.body?.t || '');
+    await suppressEmail(payload.email, 'recipient_unsubscribe');
+    if (oneClick) return res.status(200).type('text/plain').send('OK');
+    res.type('html').send(`<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>تم إيقاف الرسائل</title><style>body{font-family:Arial,Tahoma,sans-serif;background:#f5ecd2;color:#171713;padding:40px}.card{max-width:620px;margin:auto;background:#fffaf0;border:1px solid #dccb93;border-radius:20px;padding:30px;text-align:center}</style></head><body><div class="card"><h2>تم إيقاف الرسائل لهذا البريد</h2><p>لن يرسل نظام Sahab X-Ray رسائل تواصل جديدة إلى هذا العنوان.</p></div></body></html>`);
+  } catch (error) {
+    res.status(400).type('text/plain').send('Invalid or expired unsubscribe link');
+  }
+}
+
+app.get('/unsubscribe', (req, res) => handleUnsubscribe(req, res, false));
+app.post('/unsubscribe', (req, res) => handleUnsubscribe(req, res, true));
 
 app.post('/api/campaigns', async (req, res) => {
   try {
@@ -174,8 +196,11 @@ app.post('/api/leads/:id/send', async (req, res) => {
   try {
     claim = await claimSend(req.params.id, policy.dailyLimit);
     if (!claim?.ok) return res.status(409).json(claim);
-    const html = buildXrayEmailHtml({ name: claim.name, website: claim.website, audit: claim.audit || {}, body: claim.body, bookingUrl: process.env.CALENDAR_BOOKING_URL || '' });
-    const sent = await sendGmail({ to: claim.email, subject: claim.subject, body: claim.body, html });
+    const unsubToken = createUnsubscribeToken({ leadId: req.params.id, email: claim.email });
+    const unsubscribeUrl = `${requestBaseUrl(req)}/unsubscribe?t=${encodeURIComponent(unsubToken)}`;
+    const bodyWithOptOut = `${String(claim.body || '').trim()}\n\nإذا ما يناسبكم هذا النوع من الرسائل، تقدرون توقفونها من هنا:\n${unsubscribeUrl}`;
+    const html = buildXrayEmailHtml({ name: claim.name, website: claim.website, audit: claim.audit || {}, body: claim.body, bookingUrl: process.env.CALENDAR_BOOKING_URL || '', unsubscribeUrl });
+    const sent = await sendGmail({ to: claim.email, subject: claim.subject, body: bodyWithOptOut, html, unsubscribeUrl });
     await markSent(req.params.id, sent.id, sent.threadId || null);
     res.json({ ok: true, leadId: req.params.id, messageId: sent.id, threadId: sent.threadId || null });
   } catch (error) {
