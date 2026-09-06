@@ -30,7 +30,12 @@ async function loadConfig() {
     ['Web', config.webDiscoveryReady],
     ['Booking', config.bookingUrlReady]
   ];
-  configEl.innerHTML = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('');
+  const gmailLabel = config.gmailConnected
+    ? '<span class="ready">Gmail ●</span>'
+    : config.gmailOauthReady
+      ? '<a href="/auth/google" style="color:#d7bd68;text-decoration:none">Connect Gmail ○</a>'
+      : '<span>Gmail ○</span>';
+  configEl.innerHTML = ready.map(([name, ok]) => `<span class="${ok ? 'ready' : ''}">${esc(name)} ${ok ? '●' : '○'}</span>`).join('') + gmailLabel;
   if (config.bookingUrl && form && !form.bookingUrl.value) form.bookingUrl.value = config.bookingUrl;
 }
 
