@@ -108,15 +108,34 @@ function mergeWebSocials(target, webSocials) {
 }
 
 function chooseContactRoute({ email, emailConfidence = 100, socials, phone, webDiscovery }) {
-  if (email && emailConfidence >= 65) return { channel: 'email', destination: email, confidence: emailConfidence, reason: 'Public business email found with sufficient confidence.' };
+  if (email && emailConfidence >= 70) return { channel: 'email', destination: email, confidence: emailConfidence, reason: 'Public business email found with sufficient confidence.' };
   const socialOrder = ['linkedin', 'instagram', 'whatsapp', 'facebook', 'tiktok', 'x'];
   for (const channel of socialOrder) {
     if (!socials[channel]) continue;
     const confidence = webDiscovery?.socials?.[channel]?.confidence ?? 90;
-    if (confidence >= 60) return { channel, destination: socials[channel], confidence, reason: `No reliable email found; ${channel} business presence available.` };
+    if (confidence >= 80) return { channel, destination: socials[channel], confidence, reason: `No reliable email found; ${channel} business presence available.` };
   }
   if (phone) return { channel: 'phone', destination: phone, confidence: 70, reason: 'No reliable email/social destination found; Google Places phone is available.' };
   return { channel: 'research_required', destination: null, confidence: 0, reason: 'No reliable direct contact destination found yet.' };
+}
+
+async function enrichFromWebsite(website, found, socials) {
+  const root = normalizeWebsite(website);
+  if (!root) return { websiteHost: '', sourceType: 'none', homepageLoaded: false };
+  const websiteHost = new URL(root).host;
+  const pages = [website];
+  const homepage = await fetchHtml(website);
+  if (!homepage) return { websiteHost, sourceType: 'none', homepageLoaded: false };
+  found.push(...extractEmails(homepage, websiteHost).map(x => ({ ...x, source: website, confidence: 95 })));
+  mergeSocials(socials, extractSocialLinks(homepage, website));
+  pages.push(...extractContactLinks(homepage, website));
+  for (const page of [...new Set(pages)].slice(1, 7)) {
+    const html = await fetchHtml(page);
+    if (!html) continue;
+    found.push(...extractEmails(html, websiteHost).map(x => ({ ...x, source: page, confidence: 95 })));
+    mergeSocials(socials, extractSocialLinks(html, page));
+  }
+  return { websiteHost, sourceType: 'owned_website', homepageLoaded: true };
 }
 
 export async function enrichLeadContact(lead, { location = '' } = {}) {
@@ -125,33 +144,33 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
   const found = [];
   let websiteHost = '';
   let sourceType = 'none';
+  let resolvedWebsite = lead?.website || null;
+  let websiteDiscovery = null;
 
-  if (lead?.website) {
-    const root = normalizeWebsite(lead.website);
-    if (root) {
-      websiteHost = new URL(root).host;
-      const pages = [lead.website];
-      const homepage = await fetchHtml(lead.website);
-      if (homepage) {
-        sourceType = 'owned_website';
-        found.push(...extractEmails(homepage, websiteHost).map(x => ({ ...x, source: lead.website, confidence: 95 })));
-        mergeSocials(socials, extractSocialLinks(homepage, lead.website));
-        pages.push(...extractContactLinks(homepage, lead.website));
-      }
-      for (const page of [...new Set(pages)].slice(1, 7)) {
-        const html = await fetchHtml(page);
-        if (!html) continue;
-        found.push(...extractEmails(html, websiteHost).map(x => ({ ...x, source: page, confidence: 95 })));
-        mergeSocials(socials, extractSocialLinks(html, page));
-      }
-    }
+  if (resolvedWebsite) {
+    const first = await enrichFromWebsite(resolvedWebsite, found, socials);
+    websiteHost = first.websiteHost;
+    sourceType = first.sourceType;
   }
 
   const hasAnySocial = Object.values(socials).some(Boolean);
-  const needsWebDiscovery = !found.length || !hasAnySocial || !lead?.website;
+  const needsWebDiscovery = !found.length || !hasAnySocial || !resolvedWebsite;
   const webDiscovery = needsWebDiscovery
-    ? await discoverPublicWebContacts(lead, { location }).catch(() => ({ provider: 'error', socials: {}, emailCandidates: [], evidence: [] }))
-    : { provider: 'not_needed', socials: {}, emailCandidates: [], evidence: [] };
+    ? await discoverPublicWebContacts({ ...lead, website: resolvedWebsite }, { location }).catch(() => ({ provider: 'error', website: null, socials: {}, emailCandidates: [], evidence: [] }))
+    : { provider: 'not_needed', website: null, socials: {}, emailCandidates: [], evidence: [] };
+
+  if (!resolvedWebsite && webDiscovery.website?.url && webDiscovery.website.confidence >= 82) {
+    resolvedWebsite = webDiscovery.website.url;
+    websiteDiscovery = webDiscovery.website;
+    const second = await enrichFromWebsite(resolvedWebsite, found, socials);
+    if (second.homepageLoaded) {
+      websiteHost = second.websiteHost;
+      sourceType = 'discovered_official_website';
+    } else {
+      resolvedWebsite = null;
+      websiteDiscovery = null;
+    }
+  }
 
   mergeWebSocials(socials, webDiscovery.socials);
   for (const candidate of webDiscovery.emailCandidates || []) {
@@ -178,6 +197,8 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
 
   return {
     ...lead,
+    website: resolvedWebsite,
+    websiteDiscovery,
     contactEmail: best?.email || null,
     contactEmailConfidence: best?.confidence ?? (best ? 95 : 0),
     contactEmailSource: best?.source || null,
@@ -186,6 +207,7 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
     contactRoute: route,
     discovery: {
       sourceType,
+      websiteMatch: websiteDiscovery,
       webProvider: webDiscovery.provider,
       evidence: webDiscovery.evidence || [],
       socialMatches: webDiscovery.socials || {}
