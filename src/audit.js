@@ -2,19 +2,23 @@ import * as cheerio from 'cheerio';
 import { buildCommercialProfile } from './commercialProfile.js';
 
 const signals = [
-  { key: 'hasTitle', label: 'SEO title', weight: 8, service: 'SEO & Search Visibility' },
-  { key: 'hasMetaDescription', label: 'Meta description', weight: 8, service: 'SEO & Search Visibility' },
-  { key: 'hasViewport', label: 'Mobile viewport', weight: 8, service: 'Website Experience' },
-  { key: 'hasPrimaryCta', label: 'Primary CTA', weight: 14, service: 'Conversion & Landing Experience' },
-  { key: 'hasBooking', label: 'Booking / appointment path', weight: 14, service: 'Conversion & Booking' },
-  { key: 'hasPhoneOrWhatsApp', label: 'Phone / WhatsApp contact', weight: 10, service: 'Lead Capture' },
-  { key: 'hasAnalytics', label: 'Analytics tracking', weight: 8, service: 'Analytics & Attribution' },
-  { key: 'hasMetaPixel', label: 'Meta Pixel', weight: 8, service: 'Paid Ads Tracking' },
-  { key: 'hasInstagram', label: 'Instagram link', weight: 6, service: 'Social Presence' },
-  { key: 'hasFacebook', label: 'Facebook link', weight: 4, service: 'Social Presence' },
-  { key: 'usesHttps', label: 'HTTPS', weight: 6, service: 'Website Trust & Technical' },
-  { key: 'loads', label: 'Website reachable', weight: 6, service: 'Website Trust & Technical' }
+  { key: 'hasTitle', label: 'SEO title', weight: 8, service: 'SEO & Search Visibility', scoreEligible: true, negativeEligible: true },
+  { key: 'hasMetaDescription', label: 'Meta description', weight: 8, service: 'SEO & Search Visibility', scoreEligible: true, negativeEligible: true },
+  { key: 'hasViewport', label: 'Mobile viewport', weight: 8, service: 'Website Experience', scoreEligible: true, negativeEligible: true },
+  { key: 'hasPrimaryCta', label: 'Primary CTA', weight: 14, service: 'Conversion & Landing Experience', scoreEligible: true, negativeEligible: true },
+  { key: 'hasBooking', label: 'Booking / appointment path', weight: 14, service: 'Conversion & Booking', scoreEligible: true, negativeEligible: true },
+  { key: 'hasPhoneOrWhatsApp', label: 'Phone / WhatsApp contact', weight: 10, service: 'Lead Capture', scoreEligible: true, negativeEligible: true },
+  { key: 'usesHttps', label: 'HTTPS', weight: 6, service: 'Website Trust & Technical', scoreEligible: true, negativeEligible: true },
+  { key: 'loads', label: 'Website reachable', weight: 6, service: 'Website Trust & Technical', scoreEligible: true, negativeEligible: true },
+  // Dynamic/injected integrations are positive-only evidence. Failure to see them in raw HTML is not evidence of absence.
+  { key: 'hasAnalytics', label: 'Analytics / tag manager detected', weight: 0, service: 'Analytics & Attribution', scoreEligible: false, negativeEligible: false },
+  { key: 'hasMetaPixel', label: 'Meta Pixel directly detected', weight: 0, service: 'Paid Ads Tracking', scoreEligible: false, negativeEligible: false },
+  { key: 'hasInstagram', label: 'Instagram link detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false },
+  { key: 'hasFacebook', label: 'Facebook link detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false }
 ];
+
+const SCORE_SIGNALS = signals.filter(s => s.scoreEligible);
+const SCORE_MAX = SCORE_SIGNALS.reduce((sum, s) => sum + s.weight, 0);
 
 function containsAny(text, words) {
   const haystack = (text || '').toLowerCase();
@@ -32,7 +36,7 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
   const averageTicket = Number(assumptions.averageTicket) || 2500;
   const monthlyLeadEstimate = Number(assumptions.monthlyLeadEstimate) || 40;
   const profile = assumptions.commercialProfile || null;
-
+  const commercialContextProvided = assumptions.commercialContextProvided === true;
   const monthlyCommercialLow = Number(profile?.monthlyCommercialValueRange?.low) || (averageTicket * monthlyLeadEstimate);
   const monthlyCommercialHigh = Number(profile?.monthlyCommercialValueRange?.high) || (averageTicket * monthlyLeadEstimate);
 
@@ -42,38 +46,48 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
   } else if (context.unreachableWebsite) {
     lowRate = 0.05; highRate = 0.12; evidenceConfidence = 40; method = 'benchmark_unreachable_website';
   } else {
-    const gap = Math.max(0, 100 - score) / 100;
-    lowRate = Math.min(0.16, gap * 0.16);
-    highRate = Math.min(0.30, gap * 0.30);
+    const gap = Math.max(0, 100 - Number(score || 0)) / 100;
+    lowRate = Math.min(0.12, gap * 0.12);
+    highRate = Math.min(0.22, gap * 0.22);
     evidenceConfidence = Math.max(55, Math.min(92, 95 - Math.round(gap * 35)));
-    method = 'observed_site_gap_model';
+    method = 'observed_customer_facing_gap_model';
   }
 
   const low = Math.round(monthlyCommercialLow * lowRate);
   const high = Math.round(monthlyCommercialHigh * highRate);
   const assumptionConfidence = Number(profile?.confidence) || 35;
   const confidence = Math.round((evidenceConfidence * 0.65) + (assumptionConfidence * 0.35));
+  const displayEligible = Boolean(
+    commercialContextProvided &&
+    assumptionConfidence >= 45 &&
+    evidenceConfidence >= 50 &&
+    high > 0
+  );
 
   return {
     monthlyRange: { low, high },
     annualRange: { low: low * 12, high: high * 12 },
+    currency: 'SAR',
+    displayEligible,
+    withheldReason: displayEligible ? null : 'Insufficient verified commercial context to show a defensible SAR opportunity estimate.',
     assumptions: {
       averageTicket,
       monthlyLeadEstimate,
       averageTicketRange: profile?.averageTicketRange || null,
       monthlyLeadRange: profile?.monthlyLeadRange || null,
-      monthlyCommercialValueRange: profile?.monthlyCommercialValueRange || null
+      monthlyCommercialValueRange: profile?.monthlyCommercialValueRange || null,
+      commercialContextProvided
     },
     confidence,
     evidenceConfidence,
     assumptionConfidence,
     method,
     basis: context.noWebsite
-      ? 'No verified website was found. The opportunity range uses a conservative leak-rate band over a per-lead public-footprint commercial assumption range.'
+      ? 'No verified website was found. Internal range uses a conservative benchmark against modeled commercial assumptions.'
       : context.unreachableWebsite
-        ? 'The linked website could not be loaded. The opportunity range uses a conservative leak-rate band over a per-lead public-footprint commercial assumption range.'
-        : 'Opportunity range combines observable public-site gaps with a per-lead commercial assumption profile derived from public footprint and campaign anchors.',
-    disclaimer: 'Estimated missed opportunity, not verified lost revenue. Commercial inputs are modeled assumptions, not CRM or accounting data.'
+        ? 'The linked website could not be loaded. Internal range uses a conservative benchmark against modeled commercial assumptions.'
+        : 'Internal opportunity range uses only observable customer-facing gaps plus explicitly provided commercial anchors. Dynamic tracking/social integrations are not treated as missing when they cannot be observed reliably.',
+    disclaimer: 'Estimated opportunity, not verified lost revenue. Commercial inputs are modeled assumptions, not CRM or accounting data.'
   };
 }
 
@@ -83,8 +97,9 @@ function buildServiceBreakdown(issues, opportunity) {
   let totalWeight = 0;
   for (const issue of issues || []) {
     const signal = signals.find(s => issue.signalKey === s.key);
+    if (signal && signal.negativeEligible === false) continue;
     const service = signal?.service || issue.service || 'Digital Growth';
-    const weight = signal?.weight || 5;
+    const weight = Math.max(1, signal?.weight || 5);
     totalWeight += weight;
     if (!grouped.has(service)) grouped.set(service, { service, weight: 0, issues: [] });
     const entry = grouped.get(service);
@@ -119,8 +134,8 @@ async function braveCorroboration(lead, website) {
     const text = rows.map(r => `${r.title || ''} ${r.description || ''} ${(r.extra_snippets || []).join(' ')} ${r.url || ''}`).join(' ').toLowerCase();
     if (!text) return null;
     return {
-      hasPrimaryCta: containsAny(text, ['احجز', 'موعد', 'book now', 'book appointment', 'schedule']),
-      hasBooking: containsAny(text, ['احجز', 'موعد', 'booking', 'appointment', 'schedule']),
+      hasPrimaryCta: containsAny(text, ['احجز', 'موعد', 'book now', 'book appointment', 'schedule', 'اطلب', 'شراء']),
+      hasBooking: containsAny(text, ['احجز', 'موعد', 'booking', 'appointment', 'schedule', 'checkout', 'cart', 'سلة']),
       hasPhoneOrWhatsApp: containsAny(text, ['whatsapp', 'واتساب', 'wa.me', '+966']),
       hasInstagram: text.includes('instagram.com'),
       hasFacebook: text.includes('facebook.com'),
@@ -144,12 +159,12 @@ export async function auditLead(lead, assumptions = {}) {
   };
 
   const result = {
-    website: lead.website || null, checkedAt: new Date().toISOString(), score: null, signals: {}, issues: [], wins: [],
+    website: lead.website || null, checkedAt: new Date().toISOString(), score: null, signals: {}, issues: [], wins: [], unknowns: [],
     opportunity: null, opportunityBreakdown: [], evidence: {}, auditMode: lead.website ? 'website' : 'presence_only', commercialProfile
   };
 
   if (!lead.website) {
-    result.issues.push({ severity: 'high', title: 'No website found', detail: 'Google Places and current public discovery did not return a verified business website.', service: 'Website & Conversion' });
+    result.issues.push({ severity: 'high', title: 'No verified website found', detail: 'Google Places and current public discovery did not return a verified business website.', service: 'Website & Conversion' });
     result.opportunity = opportunityEstimate(null, smartAssumptions, { noWebsite: true });
     result.opportunityBreakdown = [{ service: 'Website & Conversion', issues: ['No verified website found'], annualRange: result.opportunity.annualRange }];
     result.evidence = { googleRating: lead.rating || null, reviewCount: lead.reviewCount || null, contactRoute: lead.contactRoute || null };
@@ -175,6 +190,9 @@ export async function auditLead(lead, assumptions = {}) {
   const hrefs = $('a').map((_, a) => $(a).attr('href') || '').get().join(' ');
   const scripts = $('script').map((_, s) => $(s).html() || $(s).attr('src') || '').get().join(' ');
   const interactiveText = $('a,button,input[type="submit"],[role="button"]').map((_, el) => `${$(el).text()} ${$(el).attr('aria-label') || ''} ${$(el).attr('value') || ''} ${$(el).attr('href') || ''}`).get().join(' ');
+  const technicalText = `${html} ${scripts}`;
+  const isSalla = containsAny(technicalText, ['salla', 'cdn.salla.sa', 'cdn.files.salla.network']);
+  const hasTagManager = containsAny(technicalText, ['googletagmanager.com', 'gtm.js', 'gtag(']);
 
   const checks = {
     loads: response.ok,
@@ -182,18 +200,19 @@ export async function auditLead(lead, assumptions = {}) {
     hasTitle: Boolean($('title').text().trim()),
     hasMetaDescription: Boolean($('meta[name="description"]').attr('content')?.trim()),
     hasViewport: Boolean($('meta[name="viewport"]').attr('content')),
-    hasPrimaryCta: containsAny(`${bodyText} ${interactiveText}`, ['book now', 'book appointment', 'schedule', 'get quote', 'contact us', 'احجز', 'احجزي', 'موعد', 'تواصل', 'اطلب موعد']),
-    hasBooking: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['calendly', 'book', 'booking', 'appointment', 'schedule', 'احجز', 'موعد', 'اطلب موعد']),
+    hasPrimaryCta: containsAny(`${bodyText} ${interactiveText}`, ['book now', 'book appointment', 'schedule', 'get quote', 'contact us', 'احجز', 'احجزي', 'موعد', 'تواصل', 'اطلب موعد', 'أضف للسلة', 'اضف للسلة', 'شراء', 'تسوق']),
+    hasBooking: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['calendly', 'book', 'booking', 'appointment', 'schedule', 'احجز', 'موعد', 'اطلب موعد', 'checkout', 'cart', 'سلة المشتريات', 'متابعة التسوق']),
     hasPhoneOrWhatsApp: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['tel:', 'wa.me', 'whatsapp', 'واتساب', '+966', '+1 ']),
-    hasAnalytics: containsAny(`${html} ${scripts}`, ['googletagmanager', 'gtag(', 'google-analytics.com']),
-    hasMetaPixel: containsAny(`${html} ${scripts}`, ['connect.facebook.net', 'fbq(']),
-    hasInstagram: containsAny(hrefs, ['instagram.com']),
-    hasFacebook: containsAny(hrefs, ['facebook.com'])
+    hasAnalytics: hasTagManager || containsAny(technicalText, ['google-analytics.com']),
+    hasMetaPixel: containsAny(technicalText, ['connect.facebook.net', 'fbq(', 'facebook.com/tr']),
+    hasInstagram: containsAny(hrefs, ['instagram.com']) || Boolean(lead.socials?.instagram),
+    hasFacebook: containsAny(hrefs, ['facebook.com']) || Boolean(lead.socials?.facebook)
   };
 
-  const preliminaryScore = signals.reduce((sum, signal) => sum + (checks[signal.key] ? signal.weight : 0), 0);
+  const preliminaryEarned = SCORE_SIGNALS.reduce((sum, signal) => sum + (checks[signal.key] ? signal.weight : 0), 0);
+  const preliminaryScore = SCORE_MAX ? Math.round((preliminaryEarned / SCORE_MAX) * 100) : 0;
   let corroboration = null;
-  if (preliminaryScore < 70 || bodyText.length < 600) {
+  if (preliminaryScore < 80 || bodyText.length < 600 || isSalla) {
     corroboration = await braveCorroboration(lead, lead.website);
     if (corroboration) {
       for (const key of ['hasPrimaryCta','hasBooking','hasPhoneOrWhatsApp','hasInstagram','hasFacebook']) {
@@ -202,33 +221,42 @@ export async function auditLead(lead, assumptions = {}) {
     }
   }
 
-  let score = 0;
+  let earned = 0;
   for (const signal of signals) {
     const passed = Boolean(checks[signal.key]);
+    if (!signal.negativeEligible && !passed) {
+      result.signals[signal.key] = null;
+      const detail = signal.key === 'hasMetaPixel' && hasTagManager
+        ? 'Tag Manager is present. Pixel/ad tags may be injected dynamically, so raw HTML cannot prove presence or absence.'
+        : 'This integration can be injected dynamically or rendered client-side. The public HTML scan cannot reliably prove absence.';
+      result.unknowns.push({ signalKey: signal.key, label: signal.label, detail });
+      continue;
+    }
+
     result.signals[signal.key] = passed;
     if (passed) {
-      score += signal.weight;
+      if (signal.scoreEligible) earned += signal.weight;
       result.wins.push(signal.label);
-    } else {
+    } else if (signal.negativeEligible) {
       const severity = signal.weight >= 14 ? 'high' : signal.weight >= 8 ? 'medium' : 'low';
-      const uncertain = ['hasAnalytics','hasMetaPixel'].includes(signal.key);
       result.issues.push({
         severity, signalKey: signal.key, service: signal.service,
-        title: `${uncertain ? 'Not detected publicly' : 'Missing or weak'}: ${signal.label}`,
-        detail: uncertain
-          ? `The public scan did not detect ${signal.label.toLowerCase()}; this is not proof that it is absent.`
-          : `Audit did not detect ${signal.label.toLowerCase()} on the public website.`
+        title: `Missing or weak: ${signal.label}`,
+        detail: `The public page and indexed corroboration did not surface ${signal.label.toLowerCase()}.`
       });
     }
   }
 
-  result.score = Math.min(100, score);
+  result.score = SCORE_MAX ? Math.min(100, Math.round((earned / SCORE_MAX) * 100)) : null;
   result.opportunity = opportunityEstimate(result.score, smartAssumptions);
   result.opportunityBreakdown = buildServiceBreakdown(result.issues, result.opportunity);
   result.evidence = {
     finalUrl: response.url, status: response.status, title: $('title').text().trim().slice(0, 180),
     metaDescription: ($('meta[name="description"]').attr('content') || '').trim().slice(0, 280),
     htmlTextLength: bodyText.length,
+    platform: isSalla ? 'salla' : null,
+    tagManagerDetected: hasTagManager,
+    dynamicIntegrationPolicy: 'Tracking and social integrations are positive-only evidence; non-detection is treated as unknown, not missing.',
     indexedCorroboration: corroboration ? { used: true, evidenceUrls: corroboration.evidenceUrls || [] } : { used: false }
   };
   return result;
