@@ -10,7 +10,6 @@ const signals = [
   { key: 'hasPhoneOrWhatsApp', label: 'Phone / WhatsApp contact', weight: 10, service: 'Lead Capture', scoreEligible: true, negativeEligible: true },
   { key: 'usesHttps', label: 'HTTPS', weight: 6, service: 'Website Trust & Technical', scoreEligible: true, negativeEligible: true },
   { key: 'loads', label: 'Website reachable', weight: 6, service: 'Website Trust & Technical', scoreEligible: true, negativeEligible: true },
-  // Dynamic/injected integrations are positive-only evidence. Failure to see them in raw HTML is not evidence of absence.
   { key: 'hasAnalytics', label: 'Analytics / tag manager detected', weight: 0, service: 'Analytics & Attribution', scoreEligible: false, negativeEligible: false },
   { key: 'hasMetaPixel', label: 'Meta Pixel directly detected', weight: 0, service: 'Paid Ads Tracking', scoreEligible: false, negativeEligible: false },
   { key: 'hasInstagram', label: 'Instagram link detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false },
@@ -36,7 +35,9 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
   const averageTicket = Number(assumptions.averageTicket) || 2500;
   const monthlyLeadEstimate = Number(assumptions.monthlyLeadEstimate) || 40;
   const profile = assumptions.commercialProfile || null;
-  const commercialContextProvided = assumptions.commercialContextProvided === true;
+  const commercialContextProvided = assumptions.commercialContextProvided === true || Boolean(
+    assumptions.industry && assumptions.averageTicket && assumptions.monthlyLeadEstimate
+  );
   const monthlyCommercialLow = Number(profile?.monthlyCommercialValueRange?.low) || (averageTicket * monthlyLeadEstimate);
   const monthlyCommercialHigh = Number(profile?.monthlyCommercialValueRange?.high) || (averageTicket * monthlyLeadEstimate);
 
@@ -57,31 +58,13 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
   const high = Math.round(monthlyCommercialHigh * highRate);
   const assumptionConfidence = Number(profile?.confidence) || 35;
   const confidence = Math.round((evidenceConfidence * 0.65) + (assumptionConfidence * 0.35));
-  const displayEligible = Boolean(
-    commercialContextProvided &&
-    assumptionConfidence >= 45 &&
-    evidenceConfidence >= 50 &&
-    high > 0
-  );
+  const displayEligible = Boolean(commercialContextProvided && assumptionConfidence >= 45 && evidenceConfidence >= 50 && high > 0);
 
   return {
-    monthlyRange: { low, high },
-    annualRange: { low: low * 12, high: high * 12 },
-    currency: 'SAR',
-    displayEligible,
+    monthlyRange: { low, high }, annualRange: { low: low * 12, high: high * 12 }, currency: 'SAR', displayEligible,
     withheldReason: displayEligible ? null : 'Insufficient verified commercial context to show a defensible SAR opportunity estimate.',
-    assumptions: {
-      averageTicket,
-      monthlyLeadEstimate,
-      averageTicketRange: profile?.averageTicketRange || null,
-      monthlyLeadRange: profile?.monthlyLeadRange || null,
-      monthlyCommercialValueRange: profile?.monthlyCommercialValueRange || null,
-      commercialContextProvided
-    },
-    confidence,
-    evidenceConfidence,
-    assumptionConfidence,
-    method,
+    assumptions: { averageTicket, monthlyLeadEstimate, averageTicketRange: profile?.averageTicketRange || null, monthlyLeadRange: profile?.monthlyLeadRange || null, monthlyCommercialValueRange: profile?.monthlyCommercialValueRange || null, commercialContextProvided },
+    confidence, evidenceConfidence, assumptionConfidence, method,
     basis: context.noWebsite
       ? 'No verified website was found. Internal range uses a conservative benchmark against modeled commercial assumptions.'
       : context.unreachableWebsite
@@ -93,8 +76,7 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
 
 function buildServiceBreakdown(issues, opportunity) {
   const annual = opportunity?.annualRange || { low: 0, high: 0 };
-  const grouped = new Map();
-  let totalWeight = 0;
+  const grouped = new Map(); let totalWeight = 0;
   for (const issue of issues || []) {
     const signal = signals.find(s => issue.signalKey === s.key);
     if (signal && signal.negativeEligible === false) continue;
@@ -102,162 +84,63 @@ function buildServiceBreakdown(issues, opportunity) {
     const weight = Math.max(1, signal?.weight || 5);
     totalWeight += weight;
     if (!grouped.has(service)) grouped.set(service, { service, weight: 0, issues: [] });
-    const entry = grouped.get(service);
-    entry.weight += weight;
-    entry.issues.push(issue.title.replace('Missing or weak: ', '').replace('Not detected publicly: ', ''));
+    const entry = grouped.get(service); entry.weight += weight; entry.issues.push(issue.title.replace('Missing or weak: ', '').replace('Not detected publicly: ', ''));
   }
   if (!grouped.size || !totalWeight) return [];
-  return [...grouped.values()].map(entry => ({
-    service: entry.service,
-    issues: entry.issues,
-    annualRange: { low: Math.round(annual.low * (entry.weight / totalWeight)), high: Math.round(annual.high * (entry.weight / totalWeight)) }
-  })).sort((a, b) => b.annualRange.high - a.annualRange.high);
+  return [...grouped.values()].map(entry => ({ service: entry.service, issues: entry.issues, annualRange: { low: Math.round(annual.low * (entry.weight / totalWeight)), high: Math.round(annual.high * (entry.weight / totalWeight)) } })).sort((a, b) => b.annualRange.high - a.annualRange.high);
 }
 
 async function braveCorroboration(lead, website) {
   if (!process.env.BRAVE_SEARCH_API_KEY || !website) return null;
-  let host = '';
-  try { host = new URL(website).hostname.replace(/^www\./, ''); } catch { return null; }
+  let host = ''; try { host = new URL(website).hostname.replace(/^www\./, ''); } catch { return null; }
   const q = `site:${host} \"${lead.name}\" احجز موعد book appointment whatsapp instagram facebook`;
-  const url = new URL('https://api.search.brave.com/res/v1/web/search');
-  url.searchParams.set('q', q);
-  url.searchParams.set('count', '8');
-  url.searchParams.set('extra_snippets', 'true');
+  const url = new URL('https://api.search.brave.com/res/v1/web/search'); url.searchParams.set('q', q); url.searchParams.set('count', '8'); url.searchParams.set('extra_snippets', 'true');
   try {
-    const response = await fetch(url, {
-      headers: { Accept: 'application/json', 'X-Subscription-Token': process.env.BRAVE_SEARCH_API_KEY },
-      signal: AbortSignal.timeout(12000)
-    });
+    const response = await fetch(url, { headers: { Accept: 'application/json', 'X-Subscription-Token': process.env.BRAVE_SEARCH_API_KEY }, signal: AbortSignal.timeout(12000) });
     if (!response.ok) return null;
-    const data = await response.json();
-    const rows = data.web?.results || [];
+    const data = await response.json(); const rows = data.web?.results || [];
     const text = rows.map(r => `${r.title || ''} ${r.description || ''} ${(r.extra_snippets || []).join(' ')} ${r.url || ''}`).join(' ').toLowerCase();
     if (!text) return null;
-    return {
-      hasPrimaryCta: containsAny(text, ['احجز', 'موعد', 'book now', 'book appointment', 'schedule', 'اطلب', 'شراء']),
-      hasBooking: containsAny(text, ['احجز', 'موعد', 'booking', 'appointment', 'schedule', 'checkout', 'cart', 'سلة']),
-      hasPhoneOrWhatsApp: containsAny(text, ['whatsapp', 'واتساب', 'wa.me', '+966']),
-      hasInstagram: text.includes('instagram.com'),
-      hasFacebook: text.includes('facebook.com'),
-      evidenceUrls: rows.slice(0, 5).map(r => r.url)
-    };
+    return { hasPrimaryCta: containsAny(text, ['احجز','موعد','book now','book appointment','schedule','اطلب','شراء']), hasBooking: containsAny(text, ['احجز','موعد','booking','appointment','schedule','checkout','cart','سلة']), hasPhoneOrWhatsApp: containsAny(text, ['whatsapp','واتساب','wa.me','+966']), hasInstagram: text.includes('instagram.com'), hasFacebook: text.includes('facebook.com'), evidenceUrls: rows.slice(0, 5).map(r => r.url) };
   } catch { return null; }
 }
 
 export async function auditLead(lead, assumptions = {}) {
-  const commercialProfile = buildCommercialProfile({
-    lead,
-    industry: assumptions.industry || '',
-    averageTicketAnchor: assumptions.averageTicket,
-    monthlyLeadAnchor: assumptions.monthlyLeadEstimate
-  });
-  const smartAssumptions = {
-    ...assumptions,
-    averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || 2500),
-    monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || 40),
-    commercialProfile
-  };
-
-  const result = {
-    website: lead.website || null, checkedAt: new Date().toISOString(), score: null, signals: {}, issues: [], wins: [], unknowns: [],
-    opportunity: null, opportunityBreakdown: [], evidence: {}, auditMode: lead.website ? 'website' : 'presence_only', commercialProfile
-  };
+  const commercialProfile = buildCommercialProfile({ lead, industry: assumptions.industry || '', averageTicketAnchor: assumptions.averageTicket, monthlyLeadAnchor: assumptions.monthlyLeadEstimate });
+  const smartAssumptions = { ...assumptions, averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || 2500), monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || 40), commercialProfile };
+  const result = { website: lead.website || null, checkedAt: new Date().toISOString(), score: null, signals: {}, issues: [], wins: [], unknowns: [], opportunity: null, opportunityBreakdown: [], evidence: {}, auditMode: lead.website ? 'website' : 'presence_only', commercialProfile };
 
   if (!lead.website) {
     result.issues.push({ severity: 'high', title: 'No verified website found', detail: 'Google Places and current public discovery did not return a verified business website.', service: 'Website & Conversion' });
-    result.opportunity = opportunityEstimate(null, smartAssumptions, { noWebsite: true });
-    result.opportunityBreakdown = [{ service: 'Website & Conversion', issues: ['No verified website found'], annualRange: result.opportunity.annualRange }];
-    result.evidence = { googleRating: lead.rating || null, reviewCount: lead.reviewCount || null, contactRoute: lead.contactRoute || null };
-    return result;
+    result.opportunity = opportunityEstimate(null, smartAssumptions, { noWebsite: true }); result.opportunityBreakdown = [{ service: 'Website & Conversion', issues: ['No verified website found'], annualRange: result.opportunity.annualRange }]; result.evidence = { googleRating: lead.rating || null, reviewCount: lead.reviewCount || null, contactRoute: lead.contactRoute || null }; return result;
   }
 
   let html = ''; let response;
-  try {
-    response = await fetch(lead.website, {
-      redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0 (compatible; SahabAudit/1.0; +https://sahab.agency)' }, signal: AbortSignal.timeout(12000)
-    });
-    html = await response.text();
-  } catch (error) {
-    result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical' });
-    result.signals.loads = false;
-    result.opportunity = opportunityEstimate(null, smartAssumptions, { unreachableWebsite: true });
-    result.opportunityBreakdown = [{ service: 'Website Trust & Technical', issues: ['Website could not be loaded'], annualRange: result.opportunity.annualRange }];
-    return result;
-  }
+  try { response = await fetch(lead.website, { redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0 (compatible; SahabAudit/1.0; +https://sahab.agency)' }, signal: AbortSignal.timeout(12000) }); html = await response.text(); }
+  catch (error) { result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical' }); result.signals.loads = false; result.opportunity = opportunityEstimate(null, smartAssumptions, { unreachableWebsite: true }); result.opportunityBreakdown = [{ service: 'Website Trust & Technical', issues: ['Website could not be loaded'], annualRange: result.opportunity.annualRange }]; return result; }
 
-  const $ = cheerio.load(html);
-  const bodyText = $('body').text().replace(/\s+/g, ' ').trim();
-  const hrefs = $('a').map((_, a) => $(a).attr('href') || '').get().join(' ');
-  const scripts = $('script').map((_, s) => $(s).html() || $(s).attr('src') || '').get().join(' ');
-  const interactiveText = $('a,button,input[type="submit"],[role="button"]').map((_, el) => `${$(el).text()} ${$(el).attr('aria-label') || ''} ${$(el).attr('value') || ''} ${$(el).attr('href') || ''}`).get().join(' ');
-  const technicalText = `${html} ${scripts}`;
-  const isSalla = containsAny(technicalText, ['salla', 'cdn.salla.sa', 'cdn.files.salla.network']);
-  const hasTagManager = containsAny(technicalText, ['googletagmanager.com', 'gtm.js', 'gtag(']);
-
+  const $ = cheerio.load(html); const bodyText = $('body').text().replace(/\s+/g, ' ').trim(); const hrefs = $('a').map((_, a) => $(a).attr('href') || '').get().join(' '); const scripts = $('script').map((_, s) => $(s).html() || $(s).attr('src') || '').get().join(' '); const interactiveText = $('a,button,input[type="submit"],[role="button"]').map((_, el) => `${$(el).text()} ${$(el).attr('aria-label') || ''} ${$(el).attr('value') || ''} ${$(el).attr('href') || ''}`).get().join(' '); const technicalText = `${html} ${scripts}`;
+  const isSalla = containsAny(technicalText, ['salla','cdn.salla.sa','cdn.files.salla.network']); const hasTagManager = containsAny(technicalText, ['googletagmanager.com','gtm.js','gtag(']);
   const checks = {
-    loads: response.ok,
-    usesHttps: String(response.url || lead.website).startsWith('https://'),
-    hasTitle: Boolean($('title').text().trim()),
-    hasMetaDescription: Boolean($('meta[name="description"]').attr('content')?.trim()),
-    hasViewport: Boolean($('meta[name="viewport"]').attr('content')),
-    hasPrimaryCta: containsAny(`${bodyText} ${interactiveText}`, ['book now', 'book appointment', 'schedule', 'get quote', 'contact us', 'احجز', 'احجزي', 'موعد', 'تواصل', 'اطلب موعد', 'أضف للسلة', 'اضف للسلة', 'شراء', 'تسوق']),
-    hasBooking: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['calendly', 'book', 'booking', 'appointment', 'schedule', 'احجز', 'موعد', 'اطلب موعد', 'checkout', 'cart', 'سلة المشتريات', 'متابعة التسوق']),
-    hasPhoneOrWhatsApp: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['tel:', 'wa.me', 'whatsapp', 'واتساب', '+966', '+1 ']),
-    hasAnalytics: hasTagManager || containsAny(technicalText, ['google-analytics.com']),
-    hasMetaPixel: containsAny(technicalText, ['connect.facebook.net', 'fbq(', 'facebook.com/tr']),
-    hasInstagram: containsAny(hrefs, ['instagram.com']) || Boolean(lead.socials?.instagram),
-    hasFacebook: containsAny(hrefs, ['facebook.com']) || Boolean(lead.socials?.facebook)
+    loads: response.ok, usesHttps: String(response.url || lead.website).startsWith('https://'), hasTitle: Boolean($('title').text().trim()), hasMetaDescription: Boolean($('meta[name="description"]').attr('content')?.trim()), hasViewport: Boolean($('meta[name="viewport"]').attr('content')),
+    hasPrimaryCta: containsAny(`${bodyText} ${interactiveText}`, ['book now','book appointment','schedule','get quote','contact us','احجز','احجزي','موعد','تواصل','اطلب موعد','أضف للسلة','اضف للسلة','شراء','تسوق']),
+    hasBooking: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['calendly','book','booking','appointment','schedule','احجز','موعد','اطلب موعد','checkout','cart','سلة المشتريات','متابعة التسوق']),
+    hasPhoneOrWhatsApp: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['tel:','wa.me','whatsapp','واتساب','+966','+1 ']), hasAnalytics: hasTagManager || containsAny(technicalText, ['google-analytics.com']), hasMetaPixel: containsAny(technicalText, ['connect.facebook.net','fbq(','facebook.com/tr']), hasInstagram: containsAny(hrefs, ['instagram.com']) || Boolean(lead.socials?.instagram), hasFacebook: containsAny(hrefs, ['facebook.com']) || Boolean(lead.socials?.facebook)
   };
 
-  const preliminaryEarned = SCORE_SIGNALS.reduce((sum, signal) => sum + (checks[signal.key] ? signal.weight : 0), 0);
-  const preliminaryScore = SCORE_MAX ? Math.round((preliminaryEarned / SCORE_MAX) * 100) : 0;
-  let corroboration = null;
-  if (preliminaryScore < 80 || bodyText.length < 600 || isSalla) {
-    corroboration = await braveCorroboration(lead, lead.website);
-    if (corroboration) {
-      for (const key of ['hasPrimaryCta','hasBooking','hasPhoneOrWhatsApp','hasInstagram','hasFacebook']) {
-        if (!checks[key] && corroboration[key]) checks[key] = true;
-      }
-    }
-  }
+  const preliminaryEarned = SCORE_SIGNALS.reduce((sum, signal) => sum + (checks[signal.key] ? signal.weight : 0), 0); const preliminaryScore = SCORE_MAX ? Math.round((preliminaryEarned / SCORE_MAX) * 100) : 0; let corroboration = null;
+  if (preliminaryScore < 80 || bodyText.length < 600 || isSalla) { corroboration = await braveCorroboration(lead, lead.website); if (corroboration) for (const key of ['hasPrimaryCta','hasBooking','hasPhoneOrWhatsApp','hasInstagram','hasFacebook']) if (!checks[key] && corroboration[key]) checks[key] = true; }
 
   let earned = 0;
   for (const signal of signals) {
     const passed = Boolean(checks[signal.key]);
-    if (!signal.negativeEligible && !passed) {
-      result.signals[signal.key] = null;
-      const detail = signal.key === 'hasMetaPixel' && hasTagManager
-        ? 'Tag Manager is present. Pixel/ad tags may be injected dynamically, so raw HTML cannot prove presence or absence.'
-        : 'This integration can be injected dynamically or rendered client-side. The public HTML scan cannot reliably prove absence.';
-      result.unknowns.push({ signalKey: signal.key, label: signal.label, detail });
-      continue;
-    }
-
+    if (!signal.negativeEligible && !passed) { result.signals[signal.key] = null; result.unknowns.push({ signalKey: signal.key, label: signal.label, detail: signal.key === 'hasMetaPixel' && hasTagManager ? 'Tag Manager is present. Pixel/ad tags may be injected dynamically, so raw HTML cannot prove presence or absence.' : 'This integration can be injected dynamically or rendered client-side. The public HTML scan cannot reliably prove absence.' }); continue; }
     result.signals[signal.key] = passed;
-    if (passed) {
-      if (signal.scoreEligible) earned += signal.weight;
-      result.wins.push(signal.label);
-    } else if (signal.negativeEligible) {
-      const severity = signal.weight >= 14 ? 'high' : signal.weight >= 8 ? 'medium' : 'low';
-      result.issues.push({
-        severity, signalKey: signal.key, service: signal.service,
-        title: `Missing or weak: ${signal.label}`,
-        detail: `The public page and indexed corroboration did not surface ${signal.label.toLowerCase()}.`
-      });
-    }
+    if (passed) { if (signal.scoreEligible) earned += signal.weight; result.wins.push(signal.label); }
+    else if (signal.negativeEligible) { const severity = signal.weight >= 14 ? 'high' : signal.weight >= 8 ? 'medium' : 'low'; result.issues.push({ severity, signalKey: signal.key, service: signal.service, title: `Missing or weak: ${signal.label}`, detail: `The public page and indexed corroboration did not surface ${signal.label.toLowerCase()}.` }); }
   }
 
-  result.score = SCORE_MAX ? Math.min(100, Math.round((earned / SCORE_MAX) * 100)) : null;
-  result.opportunity = opportunityEstimate(result.score, smartAssumptions);
-  result.opportunityBreakdown = buildServiceBreakdown(result.issues, result.opportunity);
-  result.evidence = {
-    finalUrl: response.url, status: response.status, title: $('title').text().trim().slice(0, 180),
-    metaDescription: ($('meta[name="description"]').attr('content') || '').trim().slice(0, 280),
-    htmlTextLength: bodyText.length,
-    platform: isSalla ? 'salla' : null,
-    tagManagerDetected: hasTagManager,
-    dynamicIntegrationPolicy: 'Tracking and social integrations are positive-only evidence; non-detection is treated as unknown, not missing.',
-    indexedCorroboration: corroboration ? { used: true, evidenceUrls: corroboration.evidenceUrls || [] } : { used: false }
-  };
+  result.score = SCORE_MAX ? Math.min(100, Math.round((earned / SCORE_MAX) * 100)) : null; result.opportunity = opportunityEstimate(result.score, smartAssumptions); result.opportunityBreakdown = buildServiceBreakdown(result.issues, result.opportunity);
+  result.evidence = { finalUrl: response.url, status: response.status, title: $('title').text().trim().slice(0, 180), metaDescription: ($('meta[name="description"]').attr('content') || '').trim().slice(0, 280), htmlTextLength: bodyText.length, platform: isSalla ? 'salla' : null, tagManagerDetected: hasTagManager, dynamicIntegrationPolicy: 'Tracking and social integrations are positive-only evidence; non-detection is treated as unknown, not missing.', indexedCorroboration: corroboration ? { used: true, evidenceUrls: corroboration.evidenceUrls || [] } : { used: false } };
   return result;
 }
