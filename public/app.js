@@ -66,7 +66,7 @@ function renderLiveScan(data) {
   const monthly = audit.opportunity?.monthlyRange || { low: 0, high: 0 };
   const annualBreakdown = audit.opportunityBreakdown || [];
   const route = lead.contactRoute || {};
-  const confidence = route.confidence || (lead.contactEmail ? 95 : 70);
+  const confidence = audit.opportunity?.confidence ?? route.confidence ?? (lead.contactEmail ? 95 : 70);
   const rows = annualBreakdown.slice(0, 6).map(item => {
     const high = Math.round((item.annualRange?.high || 0) / 12);
     const low = Math.round((item.annualRange?.low || 0) / 12);
@@ -78,7 +78,7 @@ function renderLiveScan(data) {
 
   scanResult.innerHTML = `<div class="scan-result-card">
     <div class="business-line"><div><h2>${esc(lead.name || nameFromUrl(lead.website || 'Business'))}</h2><div class="business-meta">${lead.website ? `<a href="${esc(lead.website)}" target="_blank" style="color:#d7bd68">${esc(lead.website)}</a>` : 'public business scan'}${route.channel ? ` · best contact: ${esc(route.channel)}` : ''}</div></div><div class="confidence">estimate confidence<b>${money(confidence)}%</b></div></div>
-    <div class="leak-box"><div class="label">ESTIMATED MONTHLY REVENUE LEAK</div><div class="amount">${money(monthly.high)}</div><div class="range">est. range ${money(monthly.low)} – ${money(monthly.high)} / mo · assumption-based estimate</div></div>
+    <div class="leak-box"><div class="label">ESTIMATED MONTHLY REVENUE LEAK</div><div class="amount">${money(monthly.high)}</div><div class="range">est. range ${money(monthly.low)} – ${money(monthly.high)} / mo · ${esc(audit.opportunity?.method || 'assumption-based estimate')}</div></div>
     ${rows || '<div class="leak-row"><div><h3>No major leak detected</h3><p>The current public checks did not produce a service breakdown.</p></div><div class="leak-value">0<small>/mo est.</small></div></div>'}
     ${emailPreview}
   </div>`;
@@ -114,7 +114,9 @@ function renderCampaign(campaign) {
     const issues=(audit.issues||[]).slice(0,4).map(i=>`<li><strong>${esc(i.severity)}</strong> — ${esc(i.title)}</li>`).join('');
     const breakdown=(audit.opportunityBreakdown||[]).slice(0,6).map(item=>`<tr><td>${esc(item.service)}</td><td>${money(item.annualRange?.low)}–${money(item.annualRange?.high)}</td><td>${esc((item.issues||[]).slice(0,2).join(', '))}</td></tr>`).join('');
     const route=lead.contactRoute||{}; const destination=route.destination||lead.contactEmail||lead.phone||'Research required';
-    return `<article class="lead-card"><div class="lead-top"><div><div class="kicker">#${index+1} · ${esc(lead.address||'')} · ${esc(lead.status||'')}</div><h3>${esc(lead.name)}</h3><div class="meta">${lead.rating?`★ ${esc(lead.rating)} (${esc(lead.reviewCount)})`:'No rating data'} · ${lead.website?`<a href="${esc(lead.website)}" target="_blank">website</a>`:'no website'}</div><div class="meta"><strong>Best contact:</strong> ${esc(route.channel||(lead.contactEmail?'email':'research_required'))} · ${esc(destination)}</div></div><div class="score"><span>${esc(audit.score??0)}</span>/100</div></div><div class="columns"><div><h4>Estimated missed opportunity</h4><p class="opportunity"><strong>${money(annual.low)}–${money(annual.high)} / year</strong></p><table class="breakdown"><thead><tr><th>Area</th><th>Est. annual range</th><th>Evidence</th></tr></thead><tbody>${breakdown||'<tr><td colspan="3">No breakdown available.</td></tr>'}</tbody></table><h4>Top gaps</h4><ul>${issues||'<li>No major issue detected in current checks.</li>'}</ul><p class="fine">Estimate only; based on campaign assumptions and observable gaps, not verified lost revenue.</p></div><div><h4>Exact outreach preview</h4><p><strong>${esc(lead.outreach?.subject||'')}</strong></p><pre>${esc(lead.outreach?.body||'')}</pre><p class="fine">Sending remains locked until the first batch is explicitly approved.</p></div></div></article>`;
+    const scoreHtml = audit.score === null || audit.score === undefined ? '<span>N/A</span>' : `<span>${esc(audit.score)}</span>/100`;
+    const estimateConfidence = audit.opportunity?.confidence ?? '—';
+    return `<article class="lead-card"><div class="lead-top"><div><div class="kicker">#${index+1} · ${esc(lead.address||'')} · ${esc(lead.status||'')}</div><h3>${esc(lead.name)}</h3><div class="meta">${lead.rating?`★ ${esc(lead.rating)} (${esc(lead.reviewCount)})`:'No rating data'} · ${lead.website?`<a href="${esc(lead.website)}" target="_blank">website</a>`:'no verified website'}</div><div class="meta"><strong>Best contact:</strong> ${esc(route.channel||(lead.contactEmail?'email':'research_required'))} · ${esc(destination)}</div></div><div class="score">${scoreHtml}</div></div><div class="columns"><div><h4>Estimated missed opportunity</h4><p class="opportunity"><strong>${money(annual.low)}–${money(annual.high)} / year</strong></p><p class="fine">Estimate confidence: ${esc(estimateConfidence)}% · ${esc(audit.opportunity?.method || '')}</p><table class="breakdown"><thead><tr><th>Area</th><th>Est. annual range</th><th>Evidence</th></tr></thead><tbody>${breakdown||'<tr><td colspan="3">No breakdown available.</td></tr>'}</tbody></table><h4>Top gaps</h4><ul>${issues||'<li>No major issue detected in current checks.</li>'}</ul><p class="fine">${esc(audit.opportunity?.basis || 'Estimate only; based on campaign assumptions and observable gaps, not verified lost revenue.')}</p></div><div><h4>Exact outreach preview</h4><p><strong>${esc(lead.outreach?.subject||'')}</strong></p><pre>${esc(lead.outreach?.body||'')}</pre><p class="fine">Sending remains locked until the first batch is explicitly approved.</p></div></div></article>`;
   }).join('');
 }
 
