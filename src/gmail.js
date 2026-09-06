@@ -87,6 +87,17 @@ async function accessTokenFromRefreshToken() {
   return data.access_token;
 }
 
+export async function verifyGmailConnection() {
+  const token = await accessTokenFromRefreshToken();
+  const response = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/profile', {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15000)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || `Gmail profile HTTP ${response.status}`);
+  return { emailAddress: data.emailAddress, messagesTotal: data.messagesTotal, threadsTotal: data.threadsTotal };
+}
+
 export async function sendGmail({ to, subject, body, replyToMessageId = null }) {
   const token = await accessTokenFromRefreshToken();
   const headers = [
@@ -106,4 +117,21 @@ export async function sendGmail({ to, subject, body, replyToMessageId = null }) 
   const data = await response.json();
   if (!response.ok) throw new Error(data.error?.message || `Gmail send HTTP ${response.status}`);
   return data;
+}
+
+export async function findReplies({ fromEmail, afterUnix = 0, maxResults = 10 }) {
+  if (!fromEmail) return [];
+  const token = await accessTokenFromRefreshToken();
+  const q = [`from:${fromEmail}`];
+  if (afterUnix) q.push(`after:${Math.floor(afterUnix)}`);
+  const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
+  url.searchParams.set('q', q.join(' '));
+  url.searchParams.set('maxResults', String(Math.min(50, maxResults)));
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(15000)
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error?.message || `Gmail search HTTP ${response.status}`);
+  return data.messages || [];
 }
