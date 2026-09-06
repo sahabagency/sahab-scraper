@@ -3,6 +3,8 @@ import { discoverPublicWebContacts } from './webDiscover.js';
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const CONTACT_HINTS = ['contact', 'about', 'team', 'booking', 'appointments', 'support', 'reach-us', 'اتصل', 'تواصل'];
 const ROLE_PRIORITY = ['info', 'hello', 'contact', 'sales', 'marketing', 'office', 'admin', 'support', 'bookings', 'appointments'];
+const HUB_HOSTS = ['linktr.ee','beacons.ai','bio.site','campsite.bio','taplink.cc','lnk.bio','solo.to','msha.ke'];
+const NAME_STOP = new Set(['the','and','clinic','clinics','center','centre','medical','beauty','saudi','arabia','riyadh','jeddah']);
 
 function normalizeWebsite(url) {
   try {
@@ -11,6 +13,27 @@ function normalizeWebsite(url) {
   } catch {
     return null;
   }
+}
+
+function hostOf(url = '') {
+  try { return new URL(url).hostname.toLowerCase().replace(/^www\./, ''); } catch { return ''; }
+}
+
+function isLinkHub(url = '') {
+  const host = hostOf(url);
+  return HUB_HOSTS.some(h => host === h || host.endsWith(`.${h}`));
+}
+
+function nameTokens(value = '') {
+  return [...new Set(String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(x => x.length > 2 && !NAME_STOP.has(x)))];
+}
+
+function pageMatchesBusiness(html = '', lead = {}) {
+  const hay = String(html).toLowerCase();
+  const tokens = nameTokens(lead.name);
+  if (!tokens.length) return true;
+  const hits = tokens.filter(t => hay.includes(t)).length;
+  return hits >= Math.min(2, tokens.length) || hits / tokens.length >= 0.6;
 }
 
 function cleanEmail(email) {
@@ -82,9 +105,7 @@ async function fetchHtml(url) {
     const response = await fetch(url, {
       redirect: 'follow',
       signal: controller.signal,
-      headers: {
-        'user-agent': 'Mozilla/5.0 (compatible; SahabAuditBot/1.0; +https://sahab.agency)'
-      }
+      headers: { 'user-agent': 'Mozilla/5.0 (compatible; SahabAuditBot/1.0; +https://sahab.agency)' }
     });
     if (!response.ok) return null;
     const contentType = response.headers.get('content-type') || '';
@@ -119,13 +140,15 @@ function chooseContactRoute({ email, emailConfidence = 100, socials, phone, webD
   return { channel: 'research_required', destination: null, confidence: 0, reason: 'No reliable direct contact destination found yet.' };
 }
 
-async function enrichFromWebsite(website, found, socials) {
+async function enrichFromWebsite(website, lead, found, socials, { requireBrandMatch = false } = {}) {
   const root = normalizeWebsite(website);
-  if (!root) return { websiteHost: '', sourceType: 'none', homepageLoaded: false };
+  if (!root) return { websiteHost: '', sourceType: 'none', homepageLoaded: false, brandMatched: false };
   const websiteHost = new URL(root).host;
   const pages = [website];
   const homepage = await fetchHtml(website);
-  if (!homepage) return { websiteHost, sourceType: 'none', homepageLoaded: false };
+  if (!homepage) return { websiteHost, sourceType: 'none', homepageLoaded: false, brandMatched: false };
+  const brandMatched = pageMatchesBusiness(homepage, lead);
+  if (requireBrandMatch && !brandMatched) return { websiteHost, sourceType: 'none', homepageLoaded: true, brandMatched: false };
   found.push(...extractEmails(homepage, websiteHost).map(x => ({ ...x, source: website, confidence: 95 })));
   mergeSocials(socials, extractSocialLinks(homepage, website));
   pages.push(...extractContactLinks(homepage, website));
@@ -135,7 +158,7 @@ async function enrichFromWebsite(website, found, socials) {
     found.push(...extractEmails(html, websiteHost).map(x => ({ ...x, source: page, confidence: 95 })));
     mergeSocials(socials, extractSocialLinks(html, page));
   }
-  return { websiteHost, sourceType: 'owned_website', homepageLoaded: true };
+  return { websiteHost, sourceType: 'owned_website', homepageLoaded: true, brandMatched };
 }
 
 export async function enrichLeadContact(lead, { location = '' } = {}) {
@@ -144,37 +167,43 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
   const found = [];
   let websiteHost = '';
   let sourceType = 'none';
-  let resolvedWebsite = lead?.website || null;
+  const originalWebsite = lead?.website || null;
+  const originalIsHub = Boolean(originalWebsite && isLinkHub(originalWebsite));
+  let resolvedWebsite = originalIsHub ? null : originalWebsite;
   let websiteDiscovery = null;
+  let linkHub = originalIsHub ? originalWebsite : null;
 
-  if (resolvedWebsite) {
-    const first = await enrichFromWebsite(resolvedWebsite, found, socials);
-    websiteHost = first.websiteHost;
-    sourceType = first.sourceType;
+  if (originalWebsite) {
+    const first = await enrichFromWebsite(originalWebsite, lead, found, socials, { requireBrandMatch: false });
+    if (!originalIsHub) {
+      websiteHost = first.websiteHost;
+      sourceType = first.sourceType;
+    } else {
+      sourceType = 'link_hub';
+    }
   }
 
   const hasAnySocial = Object.values(socials).some(Boolean);
-  const needsWebDiscovery = !found.length || !hasAnySocial || !resolvedWebsite;
+  const needsWebDiscovery = originalIsHub || !found.length || !hasAnySocial || !resolvedWebsite;
   const webDiscovery = needsWebDiscovery
     ? await discoverPublicWebContacts({ ...lead, website: resolvedWebsite }, { location }).catch(() => ({ provider: 'error', website: null, socials: {}, emailCandidates: [], evidence: [] }))
     : { provider: 'not_needed', website: null, socials: {}, emailCandidates: [], evidence: [] };
 
-  if (!resolvedWebsite && webDiscovery.website?.url && webDiscovery.website.confidence >= 82) {
-    resolvedWebsite = webDiscovery.website.url;
-    websiteDiscovery = webDiscovery.website;
-    const second = await enrichFromWebsite(resolvedWebsite, found, socials);
-    if (second.homepageLoaded) {
+  const candidate = webDiscovery.website;
+  const shouldTryRecovered = candidate?.url && candidate.confidence >= 80 && hostOf(candidate.url) !== hostOf(resolvedWebsite || '');
+  if (shouldTryRecovered) {
+    const second = await enrichFromWebsite(candidate.url, lead, found, socials, { requireBrandMatch: true });
+    if (second.homepageLoaded && second.brandMatched) {
+      resolvedWebsite = candidate.url;
+      websiteDiscovery = { ...candidate, verifiedByPageBrandMatch: true };
       websiteHost = second.websiteHost;
       sourceType = 'discovered_official_website';
-    } else {
-      resolvedWebsite = null;
-      websiteDiscovery = null;
     }
   }
 
   mergeWebSocials(socials, webDiscovery.socials);
-  for (const candidate of webDiscovery.emailCandidates || []) {
-    found.push({ email: candidate.email, source: candidate.source, score: 0, confidence: candidate.confidence });
+  for (const candidateEmail of webDiscovery.emailCandidates || []) {
+    found.push({ email: candidateEmail.email, source: candidateEmail.source, score: 0, confidence: candidateEmail.confidence });
   }
 
   const unique = new Map();
@@ -198,6 +227,7 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
   return {
     ...lead,
     website: resolvedWebsite,
+    linkHub,
     websiteDiscovery,
     contactEmail: best?.email || null,
     contactEmailConfidence: best?.confidence ?? (best ? 95 : 0),
@@ -207,6 +237,8 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
     contactRoute: route,
     discovery: {
       sourceType,
+      originalWebsite,
+      linkHub,
       websiteMatch: websiteDiscovery,
       webProvider: webDiscovery.provider,
       evidence: webDiscovery.evidence || [],
