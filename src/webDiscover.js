@@ -8,11 +8,8 @@ const SOCIAL_DOMAINS = {
 
 const EMAIL_RE = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
 const STOP = new Set(['the','and','clinic','clinics','center','centre','company','co','llc','ltd','saudi','arabia','riyadh','jeddah','dubai','ksa']);
-const BAD_SOCIAL_PATHS = [
-  '/popular/', '/explore/', '/search', '/hashtag/', '/topics/', '/directory/',
-  '/reel/', '/reels/', '/p/', '/tv/', '/stories/', '/story/', '/shorts/', '/watch/',
-  '/posts/', '/post/', '/status/', '/video/', '/videos/'
-];
+const BAD_SOCIAL_PATHS = ['/popular/', '/explore/', '/search', '/hashtag/', '/topics/', '/directory/', '/reel/', '/reels/', '/p/', '/stories/', '/story/', '/video/', '/videos/', '/watch/'];
+const DIRECTORY_DOMAINS = ['google.com','maps.google','instagram.com','facebook.com','fb.com','linkedin.com','tiktok.com','x.com','twitter.com','youtube.com','yelp.com','tripadvisor.com','foursquare.com','yellowpages','linktr.ee','snapchat.com','pinterest.com'];
 
 function tokens(value = '') {
   return [...new Set(String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').split(/\s+/).filter(x => x.length > 2 && !STOP.has(x)))];
@@ -26,7 +23,7 @@ function similarity(text, lead, location) {
   const locHits = locationTokens.filter(t => hay.includes(t)).length;
   const nameScore = nameTokens.length ? nameHits / nameTokens.length : 0;
   const locScore = locationTokens.length ? Math.min(1, locHits / Math.min(2, locationTokens.length)) : 0;
-  return Math.round((nameScore * 82) + (locScore * 18));
+  return Math.round((nameScore * 85) + (locScore * 15));
 }
 
 function channelFromUrl(url = '') {
@@ -37,24 +34,25 @@ function channelFromUrl(url = '') {
   return null;
 }
 
-function isDirectSocialProfile(url = '', channel = '') {
+function isDirectSocialProfile(url = '') {
   try {
     const parsed = new URL(url);
     const path = parsed.pathname.toLowerCase();
-    if (!path || path === '/') return false;
     if (BAD_SOCIAL_PATHS.some(p => path.includes(p))) return false;
     const segments = path.split('/').filter(Boolean);
-    if (!segments.length || segments.length > 3) return false;
+    return segments.length === 1 || (segments.length === 2 && ['company','in'].includes(segments[0]));
+  } catch {
+    return false;
+  }
+}
 
-    if (channel === 'linkedin') {
-      return ['company', 'in', 'school', 'showcase'].includes(segments[0]) && segments.length >= 2;
-    }
-    if (channel === 'instagram' || channel === 'tiktok' || channel === 'x') {
-      return segments.length === 1;
-    }
-    if (channel === 'facebook') {
-      return segments.length <= 2;
-    }
+function isCandidateOfficialWebsite(url = '') {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+    if (DIRECTORY_DOMAINS.some(d => host === d || host.endsWith(`.${d}`) || host.includes(d))) return false;
+    if (/\/search|\/directory|\/listing|\/profile\//i.test(parsed.pathname)) return false;
     return true;
   } catch {
     return false;
@@ -89,16 +87,29 @@ function collectEmails(results, lead, location) {
   return found.sort((a,b) => b.confidence - a.confidence);
 }
 
+function bestWebsite(all, lead, location) {
+  const candidates = [];
+  for (const result of all) {
+    if (!isCandidateOfficialWebsite(result.url)) continue;
+    const text = `${result.title || ''} ${result.description || ''} ${result.url || ''}`;
+    const confidence = similarity(text, lead, location);
+    if (confidence < 82) continue;
+    candidates.push({ url: result.url, confidence, title: result.title || '', source: 'brave_web_search' });
+  }
+  candidates.sort((a,b) => b.confidence - a.confidence);
+  return candidates[0] || null;
+}
+
 export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
   if (!process.env.BRAVE_SEARCH_API_KEY) {
-    return { provider: 'not_configured', socials: {}, emailCandidates: [], evidence: [] };
+    return { provider: 'not_configured', website: null, socials: {}, emailCandidates: [], evidence: [] };
   }
 
   const baseQuery = `\"${lead.name}\" ${location || lead.address || ''}`.trim();
   const queries = [
-    `${baseQuery} contact email`,
     `${baseQuery} official website`,
-    `${baseQuery} official Instagram Facebook LinkedIn`,
+    `${baseQuery} contact email`,
+    `${baseQuery} Instagram Facebook LinkedIn`,
     `${baseQuery} official Instagram`,
     `${baseQuery} official LinkedIn`
   ];
@@ -112,7 +123,7 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
   const socials = {};
   for (const result of all) {
     const channel = channelFromUrl(result.url);
-    if (!channel || !isDirectSocialProfile(result.url, channel)) continue;
+    if (!channel || !isDirectSocialProfile(result.url)) continue;
     const confidence = similarity(`${result.title} ${result.description} ${result.url}`, lead, location);
     if (confidence < 80) continue;
     const current = socials[channel];
@@ -133,8 +144,9 @@ export async function discoverPublicWebContacts(lead, { location = '' } = {}) {
 
   return {
     provider: 'brave',
+    website: bestWebsite(all, lead, location),
     socials,
     emailCandidates: emailCandidates.slice(0, 5),
-    evidence: uniqueEvidence.slice(0, 10)
+    evidence: uniqueEvidence.slice(0, 12)
   };
 }
