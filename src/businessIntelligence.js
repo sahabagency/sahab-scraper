@@ -5,10 +5,11 @@ function median(nums=[]){ const a=nums.filter(Number.isFinite).sort((x,y)=>x-y);
 function percentile(nums=[],p=.5){ const a=nums.filter(Number.isFinite).sort((x,y)=>x-y); if(!a.length)return null; const i=Math.max(0,Math.min(a.length-1,Math.round((a.length-1)*p))); return a[i]; }
 function uniq(arr=[]){ return [...new Set(arr.filter(Boolean))]; }
 function norm(s=''){ return String(s).replace(/\s+/g,' ').trim(); }
+function latinDigits(s=''){ const map={'٠':'0','١':'1','٢':'2','٣':'3','٤':'4','٥':'5','٦':'6','٧':'7','٨':'8','٩':'9','۰':'0','۱':'1','۲':'2','۳':'3','۴':'4','۵':'5','۶':'6','۷':'7','۸':'8','۹':'9','٬':',','٫':'.'}; return String(s).replace(/[٠-٩۰-۹٬٫]/g,c=>map[c]||c); }
 
 function detectPlatform(html=''){
   const t=html.toLowerCase();
-  if (t.includes('salla.network') || t.includes('cdn.salla.sa') || t.includes('salla.sa') || t.includes('platform.salla') || t.includes('salla.com')) return 'salla';
+  if (t.includes('salla.network') || t.includes('cdn.salla.sa') || t.includes('salla.sa') || t.includes('platform.salla') || t.includes('salla.com') || t.includes('منصة سلة')) return 'salla';
   if (t.includes('cdn.shopify.com') || t.includes('shopify-section') || t.includes('shopify.theme')) return 'shopify';
   if (t.includes('woocommerce') || t.includes('wp-content/plugins/woocommerce')) return 'woocommerce';
   return null;
@@ -43,7 +44,7 @@ function extractJsonLdProducts($){
           if(node.name) names.push(norm(node.name));
           const offers=Array.isArray(node.offers)?node.offers:[node.offers].filter(Boolean);
           for(const offer of offers){
-            const n=Number(String(offer?.price||offer?.lowPrice||'').replace(/,/g,''));
+            const n=Number(latinDigits(String(offer?.price||offer?.lowPrice||'')).replace(/,/g,''));
             if(Number.isFinite(n)&&n>=5&&n<=500000)prices.push(n);
             if(offer?.priceCurrency)currencies.push(String(offer.priceCurrency).toUpperCase());
           }
@@ -59,16 +60,18 @@ function extractJsonLdProducts($){
 }
 
 function extractPrices(text=''){
+  const source=latinDigits(text);
   const out=[];
-  const patterns=[/(?:ر\.?س|ريال(?: سعودي)?|sar)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi,/([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:ر\.?س|ريال(?: سعودي)?|sar)/gi];
-  for(const re of patterns){ let m; while((m=re.exec(text))){ const n=Number(m[1].replace(/,/g,'')); if(n>=5 && n<=500000) out.push(n); if(out.length>=80) break; } }
+  const patterns=[/(?:ر\.?\s?س|ريال(?: سعودي)?|sar)\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/gi,/([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(?:ر\.?\s?س|ريال(?: سعودي)?|sar)/gi];
+  for(const re of patterns){ let m; while((m=re.exec(source))){ const n=Number(m[1].replace(/,/g,'')); if(n>=5 && n<=500000) out.push(n); if(out.length>=100) break; } }
   return out;
 }
 
 function extractCurrency(text='',jsonCurrencies=[]){
-  if(jsonCurrencies.includes('SAR')||/(?:ر\.?س|ريال سعودي|\bSAR\b)/i.test(text))return 'SAR';
-  if(/(?:د\.إ|AED)/i.test(text))return 'AED';
-  if(/\$|USD/i.test(text))return 'USD';
+  const t=latinDigits(text);
+  if(jsonCurrencies.includes('SAR')||/(?:ر\.?\s?س|ريال سعودي|\bSAR\b)/i.test(t))return 'SAR';
+  if(/(?:د\.إ|AED)/i.test(t))return 'AED';
+  if(/\$|USD/i.test(t))return 'USD';
   return null;
 }
 
@@ -84,7 +87,7 @@ function extractCategories($){
 function inferSegments(text=''){
   const t=text.toLowerCase(); const out=[];
   const rules=[
-    ['B2B / projects',/حلول المشاريع|الشركات|المؤسسات|مشاريع|توريد|مدارس|مساجد|جهات/],
+    ['B2B / projects',/حلول المشاريع|الشركات|المؤسسات|مشاريع|توريد|مقاول|مقاولين|مدارس|مساجد|جهات/],
     ['Homes / consumers',/البيت|المنزل|الفلل|العائلة|الأطفال|الاستراحة/],
     ['Schools / education',/مدرسة|مدارس|طلاب|تعليم/],
     ['Mosques / charity',/مسجد|مساجد|صدقة جارية|سبيل/],
@@ -102,6 +105,7 @@ function extractValueProps(text=''){
     ['Warranty',/ضمان سنتين|ضمان|استعادة الأموال/],
     ['Loyalty program',/برامج الولاء|نقاط الولاء/],
     ['24/7 support',/دعم فني على مدار الساعة|24\/7/],
+    ['Installment payments',/تمارا|تابي|tamara|tabby|mis pay|mispay/],
     ['Made for Saudi climate',/شمس السعودية|حرارة الصيف|الحرارة القاسية/]
   ];
   for(const [label,re] of rules) if(re.test(t))out.push(label);
@@ -119,15 +123,15 @@ function productCandidates($,baseUrl){
     let score=0;
     if(/\/product|\/products|\/p\d|\/item/.test(p)) score+=7;
     if(/\/category|\/categories|\/collection|\/c\d/.test(p)) score+=5;
-    const txt=norm($(a).text()); if(/براد|خزان|شبك|منتج|product|حلول المشاريع/i.test(txt)) score+=3;
+    const txt=norm($(a).text()); if(/براد|خزان|شبك|منتج|product|حلول المشاريع|الشركات/i.test(txt)) score+=3;
     if(score) scored.push({url:u.href,score});
   });
-  return uniq(scored.sort((a,b)=>b.score-a.score).map(x=>x.url)).slice(0,8);
+  return uniq(scored.sort((a,b)=>b.score-a.score).map(x=>x.url)).slice(0,10);
 }
 
 async function fetchText(url){
   try{
-    const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 (compatible; SahabBusinessIntelligence/2.0; +https://sahab.agency)'},signal:AbortSignal.timeout(10000)});
+    const r=await fetch(url,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 (compatible; SahabBusinessIntelligence/2.1; +https://sahab.agency)'},signal:AbortSignal.timeout(10000)});
     if(!r.ok)return null; return await r.text();
   }catch{return null}
 }
@@ -135,10 +139,26 @@ async function fetchText(url){
 function ticketFromPrices(prices,industry){
   if(!prices.length)return null;
   const med=median(prices); if(!med)return null;
-  // Durable/high-ticket products are typically a one-product basket; consumables can have multi-item baskets.
   let multiplier=1.0;
   if(/perfume|fashion|general ecommerce/i.test(industry))multiplier=1.18;
   return Math.round(med*multiplier);
+}
+
+function commerceSignals(text=''){
+  const t=text.toLowerCase();
+  return {
+    cartDetected:/أضف إلى السلة|أضف للسلة|اضف للسلة|add to cart|cart/.test(t),
+    checkoutDetected:/checkout|الدفع|إتمام الطلب|اتمام الطلب|متابعة التسوق/.test(t),
+    b2bDetected:/حلول المشاريع|الشركات|توريد|مقاول|مقاولين|مشاريع/.test(t),
+    quoteRequestDetected:/اطلب عرض سعر|طلب عرض سعر|عرض سعر|request a quote|rfq|get quote/.test(t),
+    whatsappDetected:/واتساب|whatsapp|wa\.me/.test(t),
+    phoneDetected:/tel:|\+966|05[0-9]{8}/.test(t),
+    reviewsDetected:/تقييمات المنتج|آراء العملاء|اراء العملاء|reviews|rating/.test(t),
+    blogDetected:/\/blog|المدونة|مقالات/.test(t),
+    loyaltyDetected:/برامج الولاء|نقاط الولاء/.test(t),
+    installmentDetected:/تمارا|تابي|tamara|tabby|mispay/.test(t),
+    freeDeliveryDetected:/توصيل سريع ومجاني|شحن مجاني|توصيل مجاني/.test(t)
+  };
 }
 
 export async function inferBusinessIntelligence({html='',url='',lead={},assumptions={}}={}){
@@ -151,40 +171,36 @@ export async function inferBusinessIntelligence({html='',url='',lead={},assumpti
   let combinedText=`${title} ${meta} ${body} ${categories.join(' ')}`;
   let industry=inferIndustry(combinedText);
   const jsonLd=extractJsonLdProducts($);
-  let priceSamples=uniq([...jsonLd.prices,...extractPrices(`${body} ${html}`)]).filter(n=>n>=5&&n<=500000).slice(0,80);
+  let priceSamples=uniq([...jsonLd.prices,...extractPrices(`${body} ${html}`)]).filter(n=>n>=5&&n<=500000).slice(0,100);
   let productNames=uniq(jsonLd.names).slice(0,20);
   let currencies=[...jsonLd.currencies];
   const sampledPages=[];
 
   if(url){
-    for(const candidate of productCandidates($,url).slice(0,6)){
+    for(const candidate of productCandidates($,url).slice(0,8)){
       const page=await fetchText(candidate); if(!page)continue;
       sampledPages.push(candidate);
       const p$=cheerio.load(page);
       const pBody=norm(p$('body').text());
       const pJson=extractJsonLdProducts(p$);
-      priceSamples=uniq([...priceSamples,...pJson.prices,...extractPrices(`${pBody} ${page}`)]).filter(n=>n>=5&&n<=500000).slice(0,100);
+      priceSamples=uniq([...priceSamples,...pJson.prices,...extractPrices(`${pBody} ${page}`)]).filter(n=>n>=5&&n<=500000).slice(0,120);
       productNames=uniq([...productNames,...pJson.names]).slice(0,30);
       currencies=uniq([...currencies,...pJson.currencies]);
       categories=uniq([...categories,...extractCategories(p$)]).slice(0,20);
-      combinedText+=` ${pBody.slice(0,6000)}`;
+      combinedText+=` ${pBody.slice(0,8000)}`;
     }
   }
 
   industry=inferIndustry(combinedText);
-  const ecommerce=Boolean(platform || /سلة المشتريات|متابعة التسوق|add to cart|checkout|أضف للسلة|اضف للسلة/i.test(combinedText));
+  const ecommerce=Boolean(platform || /سلة المشتريات|متابعة التسوق|add to cart|checkout|أضف للسلة|أضف إلى السلة|اضف للسلة/i.test(combinedText));
   const currency=extractCurrency(`${combinedText} ${html}`,currencies) || (url&&/\.sa(?:\/|$)/i.test(url)?'SAR':null);
   const segments=inferSegments(combinedText);
   const valueProps=extractValueProps(combinedText);
+  const funnel=commerceSignals(`${combinedText} ${html}`);
 
   const cleanPrices=priceSamples.filter(n=>n>=10);
   const priceStats=cleanPrices.length?{
-    min:Math.min(...cleanPrices),
-    p25:percentile(cleanPrices,.25),
-    median:median(cleanPrices),
-    p75:percentile(cleanPrices,.75),
-    max:Math.max(...cleanPrices),
-    sampleCount:cleanPrices.length
+    min:Math.min(...cleanPrices), p25:percentile(cleanPrices,.25), median:median(cleanPrices), p75:percentile(cleanPrices,.75), max:Math.max(...cleanPrices), sampleCount:cleanPrices.length, samples:cleanPrices.slice(0,30)
   }:null;
 
   let inferredTicket=Number(assumptions.averageTicket)||null;
@@ -192,7 +208,7 @@ export async function inferBusinessIntelligence({html='',url='',lead={},assumpti
   const observedTicket=ticketFromPrices(cleanPrices,industry);
   if(observedTicket){ inferredTicket=observedTicket; ticketSource='observed_public_product_prices'; }
   else if(!inferredTicket && ecommerce){
-    if(/water coolers|tanks/i.test(industry)) inferredTicket=1800;
+    if(/water coolers|tanks/i.test(industry)) inferredTicket=2200;
     else if(/perfume/i.test(industry)) inferredTicket=350;
     else inferredTicket=400;
     ticketSource='industry_prior';
@@ -202,8 +218,8 @@ export async function inferBusinessIntelligence({html='',url='',lead={},assumpti
   let leadSource=assumptions.monthlyLeadEstimate?'campaign_anchor':null;
   if(!inferredMonthlyLeads){
     const reviews=Math.max(0,Number(lead.reviewCount)||0);
-    inferredMonthlyLeads=reviews?clamp(Math.round(Math.sqrt(reviews)*2),10,100):(ecommerce?30:20);
-    leadSource=reviews?'bounded_review_activity_proxy':'industry_prior';
+    inferredMonthlyLeads=reviews?clamp(Math.round(Math.sqrt(reviews)*2),10,100):(ecommerce?(funnel.b2bDetected?18:30):20);
+    leadSource=reviews?'bounded_review_activity_proxy':'business_model_prior';
   }
 
   let confidence=30;
@@ -215,18 +231,20 @@ export async function inferBusinessIntelligence({html='',url='',lead={},assumpti
   if(sampledPages.length>=2)confidence+=6;
   if(currency)confidence+=3;
   if(segments.length)confidence+=3;
-  confidence=clamp(confidence,30,92);
+  if(funnel.cartDetected)confidence+=3;
+  confidence=clamp(confidence,30,94);
 
   return {
     industry,
-    businessModel:ecommerce?(segments.includes('B2B / projects')?'ecommerce + projects/B2B':'ecommerce'):'lead_generation_or_info',
+    businessModel:ecommerce?(funnel.b2bDetected?'ecommerce + projects/B2B':'ecommerce'):'lead_generation_or_info',
     platform,
     currency:currency||'unknown',
     categories,
     products:productNames,
     targetSegments:segments,
     valuePropositions:valueProps,
-    priceSamples:cleanPrices.slice(0,15),
+    funnelSignals:funnel,
+    priceSamples:cleanPrices.slice(0,20),
     priceStats,
     averageTicketAnchor:inferredTicket,
     averageTicketSource:ticketSource,
@@ -235,6 +253,6 @@ export async function inferBusinessIntelligence({html='',url='',lead={},assumpti
     confidence,
     sampledPages,
     evidence:{title,metaDescription:meta,categoryCount:categories.length,productCount:productNames.length,priceSampleCount:cleanPrices.length,sampledPageCount:sampledPages.length},
-    disclaimer:'Business type, product mix, public pricing and target segments are inferred from publicly accessible website pages. Demand remains a bounded model unless verified first-party data is available.'
+    disclaimer:'Business type, product mix, public pricing, platform and target segments are inferred from publicly accessible website pages. Demand remains a bounded model unless verified first-party data is available.'
   };
 }
