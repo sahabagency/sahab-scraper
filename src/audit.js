@@ -13,8 +13,8 @@ const signals = [
   { key: 'loads', label: 'Website reachable', weight: 6, service: 'Website Trust & Technical', scoreEligible: true, negativeEligible: true },
   { key: 'hasAnalytics', label: 'Analytics / tag manager detected', weight: 0, service: 'Analytics & Attribution', scoreEligible: false, negativeEligible: false },
   { key: 'hasMetaPixel', label: 'Meta Pixel directly detected', weight: 0, service: 'Paid Ads Tracking', scoreEligible: false, negativeEligible: false },
-  { key: 'hasInstagram', label: 'Instagram link detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false },
-  { key: 'hasFacebook', label: 'Facebook link detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false }
+  { key: 'hasInstagram', label: 'Instagram presence detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false },
+  { key: 'hasFacebook', label: 'Facebook presence detected', weight: 0, service: 'Social Presence', scoreEligible: false, negativeEligible: false }
 ];
 
 const SCORE_SIGNALS = signals.filter(s => s.scoreEligible);
@@ -54,29 +54,29 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
     lowRate = Math.min(0.10, gap * 0.10);
     highRate = Math.min(0.18, gap * 0.18);
     evidenceConfidence = Math.max(55, Math.min(92, 95 - Math.round(gap * 35)));
-    method = 'observed_customer_facing_gap_model';
+    method = 'business_aware_observed_gap_model';
   }
 
   const low = Math.round(monthlyCommercialLow * lowRate);
   const high = Math.round(monthlyCommercialHigh * highRate);
   const assumptionConfidence = Number(profile?.confidence) || Number(bi?.confidence) || 30;
-  const confidence = Math.round((evidenceConfidence * 0.60) + (assumptionConfidence * 0.40));
+  const confidence = Math.round((evidenceConfidence * 0.58) + (assumptionConfidence * 0.42));
   const displayEligible = Boolean(commercialContextProvided && Number(bi?.confidence || 0) >= 55 && assumptionConfidence >= 45 && high > 0);
 
   return {
     monthlyRange: { low, high },
     annualRange: { low: low * 12, high: high * 12 },
-    currency: 'SAR',
+    currency: profile?.currency || bi?.currency || 'SAR',
     displayEligible,
-    withheldReason: displayEligible ? null : 'Commercial context is still too weak for a defensible public-data estimate.',
+    withheldReason: displayEligible ? null : 'No defensible monetizable public gap is strong enough yet.',
     assumptions: {
       averageTicket,
       monthlyLeadEstimate,
       averageTicketRange: profile?.averageTicketRange || null,
       monthlyLeadRange: profile?.monthlyLeadRange || null,
       monthlyCommercialValueRange: profile?.monthlyCommercialValueRange || null,
-      averageTicketSource: bi?.averageTicketSource || null,
-      monthlyLeadSource: bi?.monthlyLeadSource || null,
+      averageTicketSource: profile?.averageTicketSource || bi?.averageTicketSource || null,
+      monthlyLeadSource: profile?.monthlyLeadSource || bi?.monthlyLeadSource || null,
       commercialContextProvided
     },
     confidence, evidenceConfidence, assumptionConfidence, method,
@@ -84,8 +84,8 @@ function opportunityEstimate(score, assumptions = {}, context = {}) {
       ? 'No verified website was found. The internal estimate uses a conservative benchmark over public business context.'
       : context.unreachableWebsite
         ? 'The linked website could not be loaded. The internal estimate uses a conservative benchmark over public business context.'
-        : 'Opportunity range combines verified customer-facing gaps with business type, public products/categories, observed public prices when available, platform signals, and bounded demand proxies.',
-    disclaimer: 'Estimated opportunity, not verified lost revenue. Public product, pricing and demand signals are modeled and are not internal CRM/accounting data.'
+        : 'Opportunity range combines verified customer-facing and funnel gaps with inferred business model, public product pricing, platform signals, target segments and bounded demand proxies.',
+    disclaimer: 'Estimated opportunity, not verified lost revenue. Product pricing can be observed publicly; demand and conversion impact remain modeled until first-party data is available.'
   };
 }
 
@@ -96,6 +96,7 @@ function buildServiceBreakdown(issues, opportunity) {
   for (const issue of issues || []) {
     const signal = signals.find(s => issue.signalKey === s.key);
     if (signal && signal.negativeEligible === false) continue;
+    if (issue.monetizable === false) continue;
     const service = signal?.service || issue.service || 'Digital Growth';
     const weight = Math.max(1, issue.weight || signal?.weight || 5);
     totalWeight += weight;
@@ -140,12 +141,41 @@ async function braveCorroboration(lead, website) {
   } catch { return null; }
 }
 
+function businessAwareIssues(bi = {}) {
+  const issues = [];
+  const f = bi.funnelSignals || {};
+  const ecommerce = String(bi.businessModel || '').includes('ecommerce');
+
+  if (ecommerce && f.b2bDetected && !f.quoteRequestDetected) {
+    issues.push({
+      severity: 'medium', weight: 10, service: 'B2B Conversion', monetizable: true,
+      title: 'Project/B2B demand is visible, but a dedicated quote-request path was not clearly detected',
+      detail: 'The site targets projects/companies, but the sampled public pages did not clearly expose an RFQ / request-a-quote conversion path. High-value project buyers often need a different funnel from standard cart checkout.'
+    });
+  }
+  if (ecommerce && !f.reviewsDetected && Number(bi.evidence?.productCount || 0) > 0) {
+    issues.push({
+      severity: 'medium', weight: 7, service: 'Product Conversion', monetizable: true,
+      title: 'Product-level social proof was not clearly detected on sampled product pages',
+      detail: 'For a considered purchase, verified product reviews or stronger proof near the product decision can improve buyer confidence.'
+    });
+  }
+  if (ecommerce && !f.blogDetected && /water coolers|tanks|clinic|professional/i.test(String(bi.industry || ''))) {
+    issues.push({
+      severity: 'low', weight: 5, service: 'SEO & Demand Capture', monetizable: true,
+      title: 'Educational commercial-intent content path was not detected',
+      detail: 'High-consideration products benefit from content that captures comparison, use-case and specification searches before purchase.'
+    });
+  }
+  return issues;
+}
+
 function contentRelevanceIssues(bodyText, bi) {
   const issues = [];
   const t = String(bodyText || '').toLowerCase();
-  if (bi?.industry === 'water coolers & tanks' && /صيحات الموضة|fashion trends|مجلات الموضة/.test(t)) {
+  if (/water coolers|tanks/i.test(String(bi?.industry || '')) && /صيحات الموضة|fashion trends|مجلات الموضة/.test(t)) {
     issues.push({
-      severity: 'medium', weight: 8, service: 'Content & Conversion',
+      severity: 'medium', weight: 8, service: 'Content & Conversion', monetizable: true,
       title: 'Irrelevant content detected in customer-facing FAQ',
       detail: 'A fashion-related FAQ appears on a water-cooler/tank store. This can weaken relevance, trust and search clarity.'
     });
@@ -153,11 +183,29 @@ function contentRelevanceIssues(bodyText, bi) {
   return issues;
 }
 
+function profileIntelFromBi(bi = {}) {
+  return {
+    confidence: bi.confidence,
+    industry: bi.industry,
+    businessType: bi.businessModel,
+    commerce: {
+      ecommerce: String(bi.businessModel || '').includes('ecommerce'),
+      b2b: String(bi.businessModel || '').toLowerCase().includes('b2b'),
+      businessModel: bi.businessModel
+    },
+    platform: bi.platform ? { name: bi.platform === 'salla' ? 'Salla' : bi.platform === 'shopify' ? 'Shopify' : bi.platform === 'woocommerce' ? 'WooCommerce' : bi.platform, confidence: 95 } : null,
+    currency: { currency: bi.currency || 'SAR', confidence: bi.currency && bi.currency !== 'unknown' ? 90 : 40 },
+    priceStats: bi.priceStats ? { ...bi.priceStats, samples: bi.priceStats.samples || bi.priceSamples || [] } : null,
+    pagesScanned: bi.sampledPages || []
+  };
+}
+
 function buildProfile({ lead, assumptions, bi }) {
-  const ticketAnchor = Number(assumptions.averageTicket) || Number(bi?.averageTicketAnchor) || 2500;
-  const leadAnchor = Number(assumptions.monthlyLeadEstimate) || Number(bi?.monthlyLeadAnchor) || 40;
+  const ticketAnchor = Number(assumptions.averageTicket) || Number(bi?.averageTicketAnchor) || null;
+  const leadAnchor = Number(assumptions.monthlyLeadEstimate) || Number(bi?.monthlyLeadAnchor) || null;
+  const leadForProfile = bi ? { ...lead, siteIntelligence: profileIntelFromBi(bi) } : lead;
   return buildCommercialProfile({
-    lead,
+    lead: leadForProfile,
     industry: assumptions.industry || bi?.industry || '',
     averageTicketAnchor: ticketAnchor,
     monthlyLeadAnchor: leadAnchor
@@ -168,8 +216,8 @@ export async function auditLead(lead, assumptions = {}) {
   let commercialProfile = buildProfile({ lead, assumptions, bi: null });
   let smartAssumptions = {
     ...assumptions,
-    averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || 2500),
-    monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || 40),
+    averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || 0),
+    monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || 0),
     commercialProfile,
     businessIntelligence: null
   };
@@ -180,7 +228,7 @@ export async function auditLead(lead, assumptions = {}) {
   };
 
   if (!lead.website) {
-    result.issues.push({ severity: 'high', title: 'No verified website found', detail: 'Current public discovery did not return a verified business website.', service: 'Website & Conversion' });
+    result.issues.push({ severity: 'high', title: 'No verified website found', detail: 'Current public discovery did not return a verified business website.', service: 'Website & Conversion', monetizable: true });
     result.opportunity = opportunityEstimate(null, smartAssumptions, { noWebsite: true });
     result.opportunityBreakdown = [{ service: 'Website & Conversion', issues: ['No verified website found'], annualRange: result.opportunity.annualRange }];
     result.evidence = { googleRating: lead.rating || null, reviewCount: lead.reviewCount || null, contactRoute: lead.contactRoute || null };
@@ -189,10 +237,10 @@ export async function auditLead(lead, assumptions = {}) {
 
   let html = ''; let response;
   try {
-    response = await fetch(lead.website, { redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0 (compatible; SahabAudit/2.0; +https://sahab.agency)' }, signal: AbortSignal.timeout(12000) });
+    response = await fetch(lead.website, { redirect: 'follow', headers: { 'user-agent': 'Mozilla/5.0 (compatible; SahabAudit/2.2; +https://sahab.agency)' }, signal: AbortSignal.timeout(12000) });
     html = await response.text();
   } catch (error) {
-    result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical' });
+    result.issues.push({ severity: 'high', title: 'Website could not be loaded', detail: error.message, service: 'Website Trust & Technical', monetizable: true });
     result.signals.loads = false;
     result.opportunity = opportunityEstimate(null, smartAssumptions, { unreachableWebsite: true });
     result.opportunityBreakdown = [{ service: 'Website Trust & Technical', issues: ['Website could not be loaded'], annualRange: result.opportunity.annualRange }];
@@ -204,8 +252,8 @@ export async function auditLead(lead, assumptions = {}) {
   smartAssumptions = {
     ...assumptions,
     industry: assumptions.industry || bi.industry,
-    averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || Number(bi.averageTicketAnchor) || 2500),
-    monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || Number(bi.monthlyLeadAnchor) || 40),
+    averageTicket: midpoint(commercialProfile.averageTicketRange, Number(assumptions.averageTicket) || Number(bi.averageTicketAnchor) || 0),
+    monthlyLeadEstimate: midpoint(commercialProfile.monthlyLeadRange, Number(assumptions.monthlyLeadEstimate) || Number(bi.monthlyLeadAnchor) || 0),
     commercialProfile,
     businessIntelligence: bi,
     commercialContextProvided: assumptions.commercialContextProvided === true || Number(bi.confidence || 0) >= 55
@@ -219,7 +267,7 @@ export async function auditLead(lead, assumptions = {}) {
   const scripts = $('script').map((_, s) => $(s).html() || $(s).attr('src') || '').get().join(' ');
   const interactiveText = $('a,button,input[type="submit"],[role="button"]').map((_, el) => `${$(el).text()} ${$(el).attr('aria-label') || ''} ${$(el).attr('value') || ''} ${$(el).attr('href') || ''}`).get().join(' ');
   const technicalText = `${html} ${scripts}`;
-  const isEcommerce = bi.businessModel === 'ecommerce';
+  const isEcommerce = String(bi.businessModel || '').includes('ecommerce');
   const isSalla = bi.platform === 'salla';
   const hasTagManager = containsAny(technicalText, ['googletagmanager.com','gtm.js','gtag(']);
 
@@ -230,12 +278,12 @@ export async function auditLead(lead, assumptions = {}) {
     hasMetaDescription: Boolean($('meta[name="description"]').attr('content')?.trim()),
     hasViewport: Boolean($('meta[name="viewport"]').attr('content')),
     hasPrimaryCta: containsAny(`${bodyText} ${interactiveText}`, isEcommerce
-      ? ['أضف للسلة','اضف للسلة','شراء','تسوق','متابعة التسوق','اطلب','add to cart','buy now','shop now']
+      ? ['أضف للسلة','أضف إلى السلة','اضف للسلة','شراء','تسوق','متابعة التسوق','اطلب','add to cart','buy now','shop now']
       : ['book now','book appointment','schedule','get quote','contact us','احجز','احجزي','موعد','تواصل','اطلب موعد']),
     hasBooking: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, isEcommerce
-      ? ['checkout','cart','سلة المشتريات','متابعة التسوق','شراء','add to cart']
+      ? ['checkout','cart','سلة المشتريات','متابعة التسوق','شراء','add to cart','أضف إلى السلة','أضف للسلة']
       : ['calendly','book','booking','appointment','schedule','احجز','موعد','اطلب موعد']),
-    hasPhoneOrWhatsApp: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['tel:','wa.me','whatsapp','واتساب','+966','+1 ']),
+    hasPhoneOrWhatsApp: containsAny(`${hrefs} ${bodyText} ${interactiveText}`, ['tel:','wa.me','whatsapp','واتساب','+966','+1 ']) || Boolean(lead.socials?.whatsapp),
     hasAnalytics: hasTagManager || containsAny(technicalText, ['google-analytics.com']),
     hasMetaPixel: containsAny(technicalText, ['connect.facebook.net','fbq(','facebook.com/tr']),
     hasInstagram: containsAny(hrefs, ['instagram.com']) || Boolean(lead.socials?.instagram),
@@ -275,19 +323,21 @@ export async function auditLead(lead, assumptions = {}) {
     } else if (signal.negativeEligible) {
       const severity = signal.weight >= 14 ? 'high' : signal.weight >= 8 ? 'medium' : 'low';
       result.issues.push({
-        severity, signalKey: signal.key, service: signal.service,
+        severity, signalKey: signal.key, service: signal.service, monetizable: true,
         title: `Missing or weak: ${isEcommerce && signal.key === 'hasBooking' ? 'Cart / checkout path' : signal.label}`,
         detail: `The public page and indexed corroboration did not surface ${signal.label.toLowerCase()}.`
       });
     }
   }
 
+  const intelligenceIssues = businessAwareIssues(bi);
   const relevanceIssues = contentRelevanceIssues(bodyText, bi);
-  result.issues.push(...relevanceIssues);
+  result.issues.push(...intelligenceIssues, ...relevanceIssues);
+  const intelligencePenalty = intelligenceIssues.reduce((s, i) => s + Number(i.weight || 0), 0);
   const relevancePenalty = relevanceIssues.reduce((s, i) => s + Number(i.weight || 0), 0);
 
   const baseScore = SCORE_MAX ? Math.min(100, Math.round((earned / SCORE_MAX) * 100)) : null;
-  result.score = baseScore == null ? null : Math.max(0, baseScore - relevancePenalty);
+  result.score = baseScore == null ? null : Math.max(0, baseScore - intelligencePenalty - relevancePenalty);
   result.opportunity = opportunityEstimate(result.score, smartAssumptions);
   result.opportunityBreakdown = buildServiceBreakdown(result.issues, result.opportunity);
   result.evidence = {
@@ -300,10 +350,16 @@ export async function auditLead(lead, assumptions = {}) {
     inferredIndustry: bi.industry,
     businessModel: bi.businessModel,
     categories: bi.categories,
+    products: bi.products,
+    targetSegments: bi.targetSegments,
+    valuePropositions: bi.valuePropositions,
+    funnelSignals: bi.funnelSignals,
     publicPriceSamples: bi.priceSamples,
+    priceStats: bi.priceStats,
     businessIntelligenceConfidence: bi.confidence,
     tagManagerDetected: hasTagManager,
-    dynamicIntegrationPolicy: 'Tracking and social integrations use positive-only evidence; non-detection is unknown, not missing.',
+    socialPresence: lead.socials || {},
+    dynamicIntegrationPolicy: 'Tracking and ad integrations use positive-only evidence; non-detection is unknown, not missing.',
     indexedCorroboration: corroboration ? { used: true, evidenceUrls: corroboration.evidenceUrls || [] } : { used: false }
   };
   return result;
