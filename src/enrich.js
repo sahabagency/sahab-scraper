@@ -169,12 +169,15 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
   let sourceType = 'none';
   const originalWebsite = lead?.website || null;
   const originalIsHub = Boolean(originalWebsite && isLinkHub(originalWebsite));
+  const authoritativeOriginal = Boolean(originalWebsite && !originalIsHub);
+  let originalHomepageLoaded = false;
   let resolvedWebsite = originalIsHub ? null : originalWebsite;
   let websiteDiscovery = null;
   let linkHub = originalIsHub ? originalWebsite : null;
 
   if (originalWebsite) {
     const first = await enrichFromWebsite(originalWebsite, lead, found, socials, { requireBrandMatch: false });
+    originalHomepageLoaded = first.homepageLoaded;
     if (!originalIsHub) {
       websiteHost = first.websiteHost;
       sourceType = first.sourceType;
@@ -190,7 +193,10 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
     : { provider: 'not_needed', website: null, socials: {}, emailCandidates: [], evidence: [] };
 
   const candidate = webDiscovery.website;
-  const shouldTryRecovered = candidate?.url && candidate.confidence >= 80 && hostOf(candidate.url) !== hostOf(resolvedWebsite || '');
+  // Never replace a working non-hub website supplied by the user or Google Places with a search result.
+  // Search recovery is only allowed when there is no owned website, the supplied link is a hub, or the supplied site did not load.
+  const mayRecoverWebsite = !authoritativeOriginal || !originalHomepageLoaded;
+  const shouldTryRecovered = mayRecoverWebsite && candidate?.url && candidate.confidence >= 80 && hostOf(candidate.url) !== hostOf(resolvedWebsite || '');
   if (shouldTryRecovered) {
     const second = await enrichFromWebsite(candidate.url, lead, found, socials, { requireBrandMatch: true });
     if (second.homepageLoaded && second.brandMatched) {
@@ -238,6 +244,8 @@ export async function enrichLeadContact(lead, { location = '' } = {}) {
     discovery: {
       sourceType,
       originalWebsite,
+      authoritativeOriginal,
+      originalHomepageLoaded,
       linkHub,
       websiteMatch: websiteDiscovery,
       webProvider: webDiscovery.provider,
