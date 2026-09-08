@@ -55,7 +55,7 @@ function adjustCommercialProfile(audit={}){
     const monthlyLow=roundNice(rows.reduce((s,x)=>s+n(x.monthlyRange?.low),0));
     const monthlyHigh=roundNice(rows.reduce((s,x)=>s+n(x.monthlyRange?.high),0));
     audit.opportunityBreakdown=rows;
-    audit.opportunity={...opp,monthlyRange:{low:monthlyLow,high:monthlyHigh},annualRange:{low:monthlyLow*12,high:monthlyHigh*12},currency:'SAR',businessBaseline:{...(opp.businessBaseline||{}),coreMedianObservedTicket:ticket.median,coreProductPriceRange:{low:ticket.low,high:ticket.high},corePriceSamples:ticket.sampleCount},basis:`${opp.basis||''} Core-product pricing is separated from accessories/tanks when identifiable, so the direct-commerce value model reflects the primary products rather than mixing every SKU into one basket.`};
+    audit.opportunity={...opp,monthlyRange:{low:monthlyLow,high:monthlyHigh},annualRange:{low:monthlyLow*12,high:monthlyHigh*12},currency:String(bi.currency||profile.currency||opp.currency||'SAR').toUpperCase(),businessBaseline:{...(opp.businessBaseline||{}),coreMedianObservedTicket:ticket.median,coreProductPriceRange:{low:ticket.low,high:ticket.high},corePriceSamples:ticket.sampleCount},basis:`${opp.basis||''} Core-product pricing is separated from accessories/tanks when identifiable, so the direct-commerce value model reflects the primary products rather than mixing every SKU into one basket.`};
   }
   return audit;
 }
@@ -102,3 +102,4 @@ export async function auditLead(lead,assumptions={}){
   audit=buildDossier(audit);
   return audit;
 }
+
