@@ -23,6 +23,12 @@ function businessContext(lead, audit) {
 function buildBreakdownLines(audit, includeMoney) { return (audit.opportunityBreakdown || []).slice(0, 5).map(item => { const r = item.annualRange || {}; return includeMoney ? `• ${item.service}: ${money(r.low)}–${money(r.high)} ريال سنويًا — ${item.issues?.slice(0, 2).join('، ') || ''}` : `• ${item.service}: ${item.issues?.slice(0, 2).join('، ') || ''}`; }); }
 function ensureBookingLink(body, bookingUrl) { if (!bookingUrl || String(body).includes(bookingUrl)) return body; return `${String(body).trim()}\n\nإذا حابين نشوف المراجعة سوا، هذا رابط موعد قصير:\n${bookingUrl}`; }
 function withQuality(message, { audit, bookingUrl }) { const quality = validateOutreach({ subject: message.subject, body: message.body, bookingUrl, audit }); return { ...message, quality }; }
+function sanitizeEvidenceClaims(message, audit = {}) {
+  const bi = audit.businessIntelligence || {}; const profile = audit.commercialProfile || {};
+  const observed = Number(bi.priceStats?.sampleCount || 0) > 0 || Number(profile.observedPriceStats?.sampleCount || 0) > 0 || /observed_(site|core)_product_prices/i.test(String(profile.averageTicketSource || ''));
+  if (observed) return message;
+  return { ...message, body: String(message.body || '').replace(/الأسعار المنشورة/g, 'هيكل المنتجات ومسار الشراء والتقدير التجاري المحدود').replace(/الأسعار المعروضة/g, 'هيكل المنتجات ومسار الشراء').replace(/observed product prices/gi, 'catalog structure and modeled ticket assumptions').replace(/public prices/gi, 'public catalog structure') };
+}
 
 function fallbackMessage({ lead, audit, bookingUrl }) {
   const issues = topIssues(audit); const route = lead.contactRoute || { channel: lead.contactEmail ? 'email' : 'research_required', destination: lead.contactEmail || null }; const context = businessContext(lead, audit); const gapLine = issueSentence(issues); const annual = audit.opportunity?.annualRange || { low: 0, high: 0 }; const showMoney = audit.opportunity?.displayEligible === true; const breakdown = buildBreakdownLines(audit, showMoney); const confidence = audit.opportunity?.confidence; const bi = audit.businessIntelligence || {}; const profile = audit.commercialProfile || {};
@@ -31,7 +37,7 @@ function fallbackMessage({ lead, audit, bookingUrl }) {
     : 'قدرت أفهم النشاط ومسار الشراء من الموقع، لكن مستوى الثقة التجاري الحالي ما يكفي إني أحط رقم مالي وأقدمه كأنه دقيق.';
   const modelLine = profile.averageTicketSource ? `مصدر نموذج قيمة الطلب: ${profile.averageTicketSource}${profile.observedPriceStats?.sampleCount ? ` من ${profile.observedPriceStats.sampleCount} عينة سعر عامة` : ''}.` : '';
   const body = `مرحبًا فريق ${lead.name}\n\n${context}\n\n${gapLine}\n\n${headline}${modelLine ? `\n${modelLine}` : ''}${breakdown.length ? `\n\nالتفصيل حسب كل جزء:\n${breakdown.join('\n')}` : ''}\n\nمهم: الفحص يعتمد على بيانات عامة فقط. أي Integration ديناميكي مثل Meta Pixel أو Analytics أو روابط اجتماعية إذا ما قدرنا نثبته علنًا، ما نعتبره مفقودًا ولا نحسب عليه فرصة مالية. ومسار المشاريع والشركات إذا كان موجودًا يُعامل كمسار ثانوي ما لم يثبت أنه الإيراد الأساسي.\n\nأنا ما أرسل لكم عرض تسويق عام. عندي المراجعة نفسها وأقدر أوريكم إيش ظهر فعليًا وإيش الأولوية التجارية بناءً على المتجر نفسه.\n\n${bookingUrl ? `إذا حابين نشوفها سوا، هذا رابط موعد قصير:\n${bookingUrl}\n\n` : ''}محمد\nSahab Agency`;
-  return withQuality({ subject: showMoney && annual.high > 0 ? `${lead.name}: فرصة نمو تقديرية حتى ${money(annual.high)} ريال سنويًا` : `${lead.name}: ملاحظات مبنية على المتجر نفسه`, body, channel: route.channel === 'research_required' ? 'email' : route.channel, destination: route.destination || lead.contactEmail || null, generatedBy: 'rules', evidenceUsed: issues, requiresReview: true }, { audit, bookingUrl });
+  return withQuality(sanitizeEvidenceClaims({ subject: showMoney && annual.high > 0 ? `${lead.name}: فرصة نمو تقديرية حتى ${money(annual.high)} ريال سنويًا` : `${lead.name}: ملاحظات مبنية على المتجر نفسه`, body, channel: route.channel === 'research_required' ? 'email' : route.channel, destination: route.destination || lead.contactEmail || null, generatedBy: 'rules', evidenceUsed: issues, requiresReview: true }, audit), { audit, bookingUrl });
 }
 
 async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
@@ -40,7 +46,8 @@ async function viaOpenAI({ lead, audit, bookingUrl, industry, location }) {
   const response = await fetch('https://api.openai.com/v1/responses', { method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload), signal: AbortSignal.timeout(20000) });
   if (!response.ok) return null; const data = await response.json(); const text = data.output_text || data.output?.flatMap(x => x.content || []).find(x => x.type === 'output_text')?.text; if (!text) return null;
   const cleaned = text.trim().replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
-  try { const parsed = JSON.parse(cleaned); if (!parsed.subject || !parsed.body) return null; const candidate = withQuality({ subject: parsed.subject, body: ensureBookingLink(parsed.body, bookingUrl), channel: lead.contactRoute?.channel || (lead.contactEmail ? 'email' : 'research_required'), destination: lead.contactRoute?.destination || lead.contactEmail || null, generatedBy: 'openai', evidenceUsed: topIssues(audit), requiresReview: true }, { audit, bookingUrl }); return candidate.quality.ok ? candidate : null; } catch { return null; }
+  try { const parsed = JSON.parse(cleaned); if (!parsed.subject || !parsed.body) return null; const candidate = withQuality(sanitizeEvidenceClaims({ subject: parsed.subject, body: ensureBookingLink(parsed.body, bookingUrl), channel: lead.contactRoute?.channel || (lead.contactEmail ? 'email' : 'research_required'), destination: lead.contactRoute?.destination || lead.contactEmail || null, generatedBy: 'openai', evidenceUsed: topIssues(audit), requiresReview: true }, audit), { audit, bookingUrl }); return candidate.quality.ok ? candidate : null; } catch { return null; }
 }
 
 export async function buildOutreach(args) { const ai = await viaOpenAI(args).catch(() => null); if (ai) return ai; const fallback = fallbackMessage(args); return { ...fallback, qualityFallback: !ai }; }
+
