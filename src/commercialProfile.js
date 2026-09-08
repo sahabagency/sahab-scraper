@@ -27,14 +27,18 @@ function categoryTicketBenchmark(industry = '') {
 function ticketFromObservedPricing(intel = {}, fallbackIndustry = '', anchor = null) {
   const p = intel.priceStats || {};
   if (Number(p.median) > 0) {
-    const lowBase = Number(p.p25 || p.median);
-    const highBase = Number(p.p75 || p.median);
-    const b2bFactor = intel.commerce?.b2b ? 1.8 : 1.35;
+    const p25 = Number(p.p25 || p.median);
+    const p75 = Number(p.p75 || p.median);
+    const ecommerce = Boolean(intel.commerce?.ecommerce);
+    // Direct ecommerce AOV should stay grounded in the store's observed product-price distribution.
+    // A B2B/project path is modeled separately and must not inflate the consumer order value.
+    const basketHighFactor = ecommerce ? 1.18 : 1.30;
     return {
-      low: roundNice(Math.max(10, lowBase * 0.9)),
-      high: roundNice(Math.max(lowBase, highBase * b2bFactor)),
+      low: roundNice(Math.max(10, p25 * 0.90)),
+      high: roundNice(Math.max(p25, p75 * basketHighFactor)),
       source: 'observed_site_prices',
-      observedSamples: (p.samples || []).length
+      observedSamples: Number(p.sampleCount) || (p.samples || []).length,
+      observedMedian: Number(p.median) || null
     };
   }
   if (Number(anchor) > 0) {
@@ -51,22 +55,48 @@ function reviewActivityProxy(reviewCount = 0) {
 
 function commerceDemandBand({ lead, intel, monthlyLeadAnchor }) {
   const activityProxy = reviewActivityProxy(lead.reviewCount);
+  const ecommerce = Boolean(intel?.commerce?.ecommerce);
+  const b2b = Boolean(intel?.commerce?.b2b);
+
   if (Number(monthlyLeadAnchor) > 0) {
     let mid = Number(monthlyLeadAnchor);
     if (activityProxy) mid = mid * 0.65 + activityProxy * 0.35;
-    return { low: clamp(roundNice(mid * 0.55), 5, 250), high: clamp(roundNice(mid * 1.45), 10, 320), source: 'campaign_anchor_plus_public_activity' };
+    return {
+      low: clamp(roundNice(mid * 0.55), 5, 250),
+      high: clamp(roundNice(mid * 1.45), 10, 320),
+      source: 'campaign_anchor_plus_public_activity',
+      unit: ecommerce ? 'orders' : 'leads'
+    };
   }
 
-  // URL-only scan: infer a conservative demand envelope from public business footprint, not a claimed traffic/lead count.
-  let mid = activityProxy || 18;
-  if (intel?.commerce?.ecommerce) mid *= 1.25;
-  if (intel?.commerce?.b2b) mid *= 0.8; // fewer but higher-value opportunities for project/B2B businesses.
-  if ((intel?.pagesScanned || []).length >= 4) mid *= 1.1;
+  // URL-only scan: this is a scenario envelope, not a measured order/lead count.
+  // Do not reduce the direct ecommerce order envelope merely because a secondary B2B path exists.
+  let mid = activityProxy || (ecommerce ? 18 : 14);
+  if (ecommerce) mid *= 1.15;
+  if (!ecommerce && b2b) mid *= 0.75;
+  if ((intel?.pagesScanned || []).length >= 4) mid *= 1.08;
   return {
     low: clamp(roundNice(mid * 0.45), 4, 160),
-    high: clamp(roundNice(mid * 1.6), 12, 240),
-    source: activityProxy ? 'public_activity_demand_envelope' : 'category_demand_envelope'
+    high: clamp(roundNice(mid * 1.45), 10, 220),
+    source: activityProxy ? 'public_activity_demand_envelope' : 'business_model_prior',
+    unit: ecommerce ? 'orders' : 'leads'
   };
+}
+
+function b2bScenario(intel = {}, directTicket = {}) {
+  if (!intel?.commerce?.b2b) return null;
+  const f = intel.funnelSignals || {};
+  const median = Number(intel.priceStats?.median) || Math.round(((Number(directTicket.low) || 0) + (Number(directTicket.high) || 0)) / 2) || null;
+  // Keep this deliberately separate from direct ecommerce AOV. We only expose a scenario, never verified pipeline value.
+  const multiplierLow = f.quoteRequestDetected || f.b2bConversionDetected ? 1.5 : 1.2;
+  const multiplierHigh = f.quoteRequestDetected || f.b2bConversionDetected ? 4.0 : 2.5;
+  return median ? {
+    opportunityValueRange: { low: roundNice(median * multiplierLow), high: roundNice(median * multiplierHigh) },
+    modeledMonthlyOpportunityCount: { low: 1, high: (f.quoteRequestDetected || f.b2bConversionDetected) ? 4 : 2 },
+    source: 'secondary_b2b_project_scenario',
+    confidence: f.quoteRequestDetected || f.b2bConversionDetected ? 58 : 42,
+    disclaimer: 'Secondary B2B/project scenario inferred from the public project path. It is not verified quotation volume, win rate or contract value.'
+  } : null;
 }
 
 export function buildCommercialProfile({ lead = {}, industry = '', averageTicketAnchor = null, monthlyLeadAnchor = null } = {}) {
@@ -75,6 +105,7 @@ export function buildCommercialProfile({ lead = {}, industry = '', averageTicket
   const ticket = ticketFromObservedPricing(intel, inferredIndustry, averageTicketAnchor);
   const demand = commerceDemandBand({ lead, intel, monthlyLeadAnchor });
   const activityProxy = reviewActivityProxy(lead.reviewCount);
+  const ecommerce = Boolean(intel?.commerce?.ecommerce);
 
   const evidence = [];
   let confidence = 32;
@@ -90,7 +121,7 @@ export function buildCommercialProfile({ lead = {}, industry = '', averageTicket
   if (intel?.currency?.currency) evidence.push(`site currency detected: ${intel.currency.currency}`);
   if (ticket.source === 'observed_site_prices') {
     confidence += 18;
-    evidence.push(`ticket range grounded in ${ticket.observedSamples || 0} public site price sample(s)`);
+    evidence.push(`direct ${ecommerce ? 'order-value' : 'ticket'} range grounded in ${ticket.observedSamples || 0} public site price sample(s); observed median ${ticket.observedMedian || 'n/a'}`);
   } else if (ticket.source === 'campaign_anchor') {
     confidence += 8;
     evidence.push('campaign average-ticket value used as an anchor');
@@ -104,14 +135,16 @@ export function buildCommercialProfile({ lead = {}, industry = '', averageTicket
   }
   if (lead.website) confidence += 6;
   if (lead.contactEmail) confidence += 3;
-  if (intel?.commerce?.b2b) evidence.push('project/B2B sales path detected; model uses lower-volume, higher-value opportunity shape');
+  if (intel?.commerce?.b2b) evidence.push('project/B2B path detected and modeled separately from direct ecommerce order value');
 
   const monthlyCommercialLow = ticket.low * demand.low;
   const monthlyCommercialHigh = ticket.high * demand.high;
-  const currency = intel?.currency?.currency || 'SAR';
+  const detectedCurrency = intel?.currency?.currency || 'SAR';
+  const currency = detectedCurrency === 'SAR' ? 'SAR' : detectedCurrency;
+  const b2b = b2bScenario(intel, ticket);
 
   return {
-    method: 'business_intelligence_commercial_model_v2',
+    method: 'business_intelligence_commercial_model_v3',
     confidence: clamp(confidence, 30, 88),
     currency,
     inferredIndustry,
@@ -121,12 +154,22 @@ export function buildCommercialProfile({ lead = {}, industry = '', averageTicket
     monthlyLeadAnchor: Number(monthlyLeadAnchor) || null,
     averageTicketRange: { low: ticket.low, high: ticket.high },
     averageTicketSource: ticket.source,
+    observedMedianTicket: ticket.observedMedian || null,
     monthlyLeadRange: { low: demand.low, high: demand.high },
     monthlyLeadSource: demand.source,
+    volumeUnit: demand.unit,
     monthlyCommercialValueRange: { low: roundNice(monthlyCommercialLow), high: roundNice(monthlyCommercialHigh) },
+    directEcommerceScenario: ecommerce ? {
+      orderValueRange: { low: ticket.low, high: ticket.high },
+      orderCountRange: { low: demand.low, high: demand.high },
+      monthlyCommerceScenarioRange: { low: roundNice(monthlyCommercialLow), high: roundNice(monthlyCommercialHigh) }
+    } : null,
+    secondaryB2BScenario: b2b,
     observedPriceStats: intel?.priceStats || null,
     activityProxy: activityProxy ? { type: 'google_review_volume', value: activityProxy } : null,
     evidence,
-    disclaimer: 'Commercial ranges are modeled from the business type, platform, public product pricing when extractable, and public footprint. They are not verified CRM, traffic, ad-spend, order, or accounting data.'
+    disclaimer: ecommerce
+      ? 'Direct ecommerce scenario is built from observed store prices and a conservative order-count envelope. Secondary B2B/project sales are modeled separately. These are not verified orders, GMV, ad spend or accounting data.'
+      : 'Commercial ranges are modeled from the business type, public pricing when extractable, and public footprint. They are not verified CRM, traffic, ad-spend, order, or accounting data.'
   };
 }
