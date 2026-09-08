@@ -27,7 +27,7 @@ function sanitizeEvidenceClaims(message, audit = {}) {
   const bi = audit.businessIntelligence || {}; const profile = audit.commercialProfile || {};
   const observed = Number(bi.priceStats?.sampleCount || 0) > 0 || Number(profile.observedPriceStats?.sampleCount || 0) > 0 || /observed_(site|core)_product_prices/i.test(String(profile.averageTicketSource || ''));
   if (observed) return message;
-  return { ...message, body: String(message.body || '').replace(/الأسعار المنشورة/g, 'هيكل المنتجات ومسار الشراء والتقدير التجاري المحدود').replace(/الأسعار المعروضة/g, 'هيكل المنتجات ومسار الشراء').replace(/observed product prices/gi, 'catalog structure and modeled ticket assumptions').replace(/public prices/gi, 'public catalog structure') };
+  return { ...message, body: String(message.body || '').replace(/الأسعار (المنشورة|المعروضة|المرصودة|المعلنة)/g, 'هيكل المنتجات ومسار الشراء والتقدير التجاري المحدود').replace(/(بناءً على|استنادًا إلى) الأسعار[^،.\n]*/g, '$1 هيكل المنتجات ومسار الشراء والتقدير التجاري المحدود').replace(/observed product prices/gi, 'catalog structure and modeled ticket assumptions').replace(/public prices/gi, 'public catalog structure') };
 }
 
 function fallbackMessage({ lead, audit, bookingUrl }) {
