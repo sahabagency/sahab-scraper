@@ -77,12 +77,15 @@ function actionPlan(service, reason, evidenceClass) {
       measurement: 'عدد RFQs المؤهلة، زمن الرد، ونسبة التحول إلى اجتماع أو عرض.'
     }
   };
-  return plans[service] || {
-    problem: reason,
-    solution: 'تحويل الملاحظة إلى تجربة محددة مرتبطة بصفحة أو خطوة في مسار العميل.',
-    method: 'تحديد baseline، تنفيذ تغيير واحد، ثم مقارنة النتائج قبل/بعد.',
-    measurement: 'مؤشر تحويل مرتبط مباشرة بالمشكلة، وليس رقمًا عامًا.'
+  const en = {
+    'Content & trust quality': { problemEn:'Irrelevant or off-topic customer-facing content is visible on the site.', solutionEn:'Remove the unrelated copy, rewrite the FAQ around the actual products, and link each answer to a relevant product or category.', methodEn:'Review every FAQ and key page, then test relevance and clarity on mobile and desktop.', measurementEn:'Track removal of irrelevant content, FAQ engagement, and clicks to products/categories.' },
+    'SEO & category demand capture': { problemEn:'Sampled category pages are missing observable SEO elements such as title, meta description, H1, or canonical.', solutionEn:'Complete the SEO elements for every category, standardize the template, and connect categories to products and internal search.', methodEn:'Create a category matrix, metadata template, Search Console checks, and re-indexing review.', measurementEn:'Measure element completion, indexed pages, and organic clicks per category.' },
+    'SEO & category demand growth': { problemEn:'The site has real categories, but search coverage across purchase intents is not fully developed.', solutionEn:'Expand category and landing pages around search intent, product, and use case.', methodEn:'Build a keyword map, publish intent-specific pages, add internal links, then test impressions and clicks.', measurementEn:'Track qualified keywords, organic sessions, and category-page clicks.' },
+    'Product conversion & trust': { problemEn:'The sampled product pages do not show enough visible social proof near the buying decision.', solutionEn:'Place reviews, ratings, photos, delivery, and warranty information beside the purchase action.', methodEn:'A/B test the order and visibility of trust elements on product pages.', measurementEn:'Track add-to-cart, checkout starts, and conversion rate per product page.' },
+    'Product merchandising & CRO': { problemEn:'The catalog and buying path exist, but product ordering, comparison, and offers need structured testing.', solutionEn:'Rank products by demand and margin, add comparisons and bundles, and improve the CTA.', methodEn:'Use internal search data, click maps, and weekly category/product experiments.', measurementEn:'Track product CTR, add-to-cart, average order value, and conversion rate.' },
+    'B2B / project lead capture': { problemEn:'A projects/business page is visible, but a dedicated request-for-quote path was not observable in the sample.', solutionEn:'Add a short RFQ form with project type, quantity, timeline, and contact method.', methodEn:'Place a clear CTA on the B2B page, instrument the form, and notify the team immediately.', measurementEn:'Track qualified RFQs, response time, and conversion to a meeting or proposal.' }
   };
+  return {...(plans[service] || { problem: reason, solution: 'Turn the observation into a page-specific conversion experiment.', method: 'Set a baseline, implement one change, and compare before and after.', measurement: 'Track the conversion metric tied directly to the problem.' }), ...(en[service] || { problemEn: reason, solutionEn: 'Turn the observation into a page-specific conversion experiment.', methodEn: 'Set a baseline, implement one change, and compare before and after.', measurementEn: 'Track the conversion metric tied directly to the problem.' })};
 }
 function row({service,reason,lowRate,highRate,confidence,evidenceClass='modeled_opportunity'},base){
   const low=roundNice(base.low*lowRate),high=Math.max(low,roundNice(base.high*highRate));
