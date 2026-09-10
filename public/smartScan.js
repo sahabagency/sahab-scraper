@@ -40,6 +40,7 @@
   function render(data) {
     const lead = data.lead || {}, audit = data.audit || {}, bi = audit.businessIntelligence || {}, profile = audit.commercialProfile || {};
     const q = data.qualification || audit.qualification || {}, opportunity = audit.opportunity || {}, monthly = opportunity.monthlyRange || {low:0,high:0};
+    const english = languageSelect?.value === 'en'; const labels = english ? { problem:'Problem', evidence:'Evidence', solution:'Solution', method:'Method', measurement:'Measurement', verified:'Verified finding', modeled:'Modeled growth opportunity', month:'SAR / month modeled' } : { problem:'المشكلة المحددة', evidence:'الدليل', solution:'الحل', method:'طريقة التنفيذ', measurement:'القياس', verified:'فجوة مثبتة', modeled:'فرصة نمو نمذجية', month:'ريال / شهر تقديري' };
     const breakdown = audit.opportunityBreakdown || [], confidence = opportunity.confidence || bi.confidence || 0;
     const priceStats = bi.priceStats || profile.observedPriceStats || {}, categories = (bi.categories || []).slice(0,10), products = (bi.products || []).slice(0,10);
     const segments = (bi.targetSegments || bi.audiences || []).slice(0,8), values = (bi.valuePropositions || []).slice(0,8), funnel = bi.funnelSignals || {};
@@ -51,8 +52,8 @@
 
     const rows = breakdown.slice(0,6).map(item => {
       const hi = Math.round(Number(item.annualRange?.high || 0)/12), lo = Math.round(Number(item.annualRange?.low || 0)/12);
-      const evidenceTag = item.evidenceClass === 'verified_gap' ? 'فجوة مثبتة' : 'فرصة نمو نمذجية';
-      return `<div class="leak-row finding"><div><h3>${esc(item.service)}</h3><p><strong>المشكلة المحددة:</strong> ${esc(item.problem || (item.issues || []).join(' · '))}</p><p><strong>الدليل:</strong> ${esc((item.issues || []).join(' · '))}</p><p><strong>الحل:</strong> ${esc(item.solution || '')}</p><p><strong>طريقة التنفيذ:</strong> ${esc(item.method || '')}</p><p><strong>القياس:</strong> ${esc(item.measurement || '')}</p><p style="font-size:11px;color:#c9b76e">${esc(evidenceTag)} · ثقة ${money(item.confidence || 0)}%</p></div><div class="leak-value">${money(hi)}<small>${money(lo)}–${money(hi)} ريال / شهر تقديري</small></div></div>`;
+      const evidenceTag = item.evidenceClass === 'verified_gap' ? labels.verified : labels.modeled;
+      return `<div class="leak-row finding"><div><h3>${esc(item.service)}</h3><p><strong>${labels.problem}:</strong> ${esc(english ? (item.problemEn || item.problem || '') : (item.problem || ''))}</p><p><strong>${labels.evidence}:</strong> ${esc(english ? ((item.evidenceEn || item.issues || []).join ? (item.evidenceEn || []).join(' · ') : (item.evidenceEn || item.issues || []).join(' · ')) : (item.issues || []).join(' · '))}</p><p><strong>${labels.solution}:</strong> ${esc(english ? (item.solutionEn || '') : (item.solution || ''))}</p><p><strong>${labels.method}:</strong> ${esc(english ? (item.methodEn || '') : (item.method || ''))}</p><p><strong>${labels.measurement}:</strong> ${esc(english ? (item.measurementEn || '') : (item.measurement || ''))}</p><p style="font-size:11px;color:#c9b76e">${esc(evidenceTag)} · ${money(item.confidence || 0)}%</p></div><div class="leak-value">${money(hi)}<small>${money(lo)}–${money(hi)} ${esc(labels.month)}</small></div></div>`;
     }).join('');
 
     const known = [
