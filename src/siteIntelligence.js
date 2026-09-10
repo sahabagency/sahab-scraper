@@ -95,11 +95,11 @@ function buildSignals({html,text,pages}){
   const b2bPageDetected=pages.some(p=>linkType(p.url)==='b2b');
   const trackers={
     googleTagManager:{state:/googletagmanager\.com\/gtm\.js|gtm-[a-z0-9]+/i.test(html)?'verified':'unknown',evidence:((html.match(/GTM-[A-Z0-9]+/ig)||[]).slice(0,3))},
-    googleAnalytics:{state:/gtag\\s*\\(|google-analytics\.com|googletagmanager/i.test(html)?'verified':'unknown',evidence:[]},
-    metaPixel:{state:/connect\\.facebook\\.net|fbq\\s*\\(|facebook\\.com\\/tr/i.test(html)?'verified':'unknown',evidence:[]},
-    tiktokPixel:{state:/analytics\\.tiktok\\.com|ttq\\s*\\.|ttq\\s*\\(/i.test(html)?'verified':'unknown',evidence:[]},
-    snapchatPixel:{state:/sc-static\\.snapchat\.com|snaptr\\s*\\(/i.test(html)?'verified':'unknown',evidence:[]},
-    googleAds:{state:/googleadservices\\.com|AW-[0-9]+|gtag\\s*\\([^)]*config/i.test(html)?'verified':'unknown',evidence:[]}
+    googleAnalytics:{state:/gtag\s*\(|google-analytics\.com|googletagmanager/i.test(html)?'verified':'unknown',evidence:[]},
+    metaPixel:{state:/connect\.facebook\.net|fbq\s*\(|facebook\.com\/tr/i.test(html)?'verified':'unknown',evidence:[]},
+    tiktokPixel:{state:/analytics\.tiktok\.com|ttq\s*\.|ttq\s*\(/i.test(html)?'verified':'unknown',evidence:[]},
+    snapchatPixel:{state:/sc-static\.snapchat\.com|snaptr\s*\(/i.test(html)?'verified':'unknown',evidence:[]},
+    googleAds:{state:/googleadservices\.com|AW-[0-9]+|gtag\s*\([^)]*config/i.test(html)?'verified':'unknown',evidence:[]}
   };
   return {
     cartDetected:/أضف للسلة|add to cart|checkout|سلة التسوق/i.test(lower),
