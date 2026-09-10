@@ -17,12 +17,12 @@ function rowsFromAudit(audit = {}, showMoney = false, language = 'ar') {
         <td style="padding:16px 0;border-top:1px solid #37342c;vertical-align:top">
           <div style="font-weight:700;color:#f8f5ea;font-size:16px">${esc(item.service || 'Growth opportunity')}</div>
           <div style="color:#a8a293;font-size:13px;line-height:1.5;margin-top:4px">${esc(evidence)}</div>
-          <div style="color:#cdbb72;font-size:11px;margin-top:5px">${esc(evidenceLabel)}${item.confidence ? ` · ثقة ${money(item.confidence)}%` : ''}</div>
+          <div style="color:#cdbb72;font-size:11px;margin-top:5px">${esc(evidenceLabel)}${item.confidence ? (english ? ` · confidence ${money(item.confidence)}%` : ` · ثقة ${money(item.confidence)}%`) : ''}</div>
         </td>
         <td align="right" style="padding:16px 0;border-top:1px solid #37342c;vertical-align:top;white-space:nowrap">
           ${showMoney
-            ? `<div style="font-size:18px;font-weight:800;color:#ff6f6f">${money(monthlyHigh)} ريال</div><div style="color:#9c9688;font-size:12px">${money(monthlyLow)}–${money(monthlyHigh)} ريال / شهر تقديري</div>`
-            : `<div style="font-size:15px;font-weight:800;color:#d9bd5a">PUBLIC EVIDENCE</div><div style="color:#9c9688;font-size:12px">بدون ادعاء مالي غير موثوق</div>`}
+            ? `<div style="font-size:18px;font-weight:800;color:#ff6f6f">${money(monthlyHigh)} ${english ? 'SAR' : 'ريال'}</div><div style="color:#9c9688;font-size:12px">${money(monthlyLow)}–${money(monthlyHigh)} ${english ? 'SAR / month modeled' : 'ريال / شهر تقديري'}</div>`
+            : `<div style="font-size:15px;font-weight:800;color:#d9bd5a">PUBLIC EVIDENCE</div><div style="color:#9c9688;font-size:12px">${english ? 'No unsupported financial claim' : 'بدون ادعاء مالي غير موثوق'}</div>`}
         </td>
       </tr>`;
   }).join('');
