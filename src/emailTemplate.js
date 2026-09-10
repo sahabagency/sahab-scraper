@@ -27,7 +27,8 @@ function rowsFromAudit(audit = {}, showMoney = false) {
   }).join('');
 }
 
-export function buildXrayEmailHtml({ name, website, audit = {}, body = '', bookingUrl = '', unsubscribeUrl = '' }) {
+export function buildXrayEmailHtml({ name, website, audit = {}, body = '', bookingUrl = '', unsubscribeUrl = '', language = 'ar' }) {
+  const english = language === 'en';
   const opportunity = audit.opportunity || {};
   const monthly = opportunity.monthlyRange || { low: 0, high: 0 };
   const showMoney = opportunity.displayEligible === true;
@@ -38,7 +39,7 @@ export function buildXrayEmailHtml({ name, website, audit = {}, body = '', booki
   const uplift = opportunity.combinedUpliftRange;
 
   return `<!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="\${english ? 'en' : 'ar'}" dir="\${english ? 'ltr' : 'rtl'}">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
 <body style="margin:0;padding:0;background:#f5ecd2;font-family:Arial,Tahoma,sans-serif;color:#171713">
   <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background:#f5ecd2;padding:28px 12px">
