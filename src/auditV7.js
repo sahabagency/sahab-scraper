@@ -38,9 +38,56 @@ function baseline(audit={}){
   return {low:roundNice(low),high:roundNice(high),medianTicket:median,lowOrders,highOrders};
 }
 
+function actionPlan(service, reason, evidenceClass) {
+  const plans = {
+    'Content & trust quality': {
+      problem: 'محتوى غير مرتبط بالنشاط ظاهر في صفحة يراها العميل.',
+      solution: 'حذف النص غير المرتبط، إعادة كتابة FAQ حسب المنتجات الفعلية، وربط كل إجابة بصفحة منتج أو فئة.',
+      method: 'مراجعة كل FAQ والصفحات الأساسية، ثم اختبار الصلة والوضوح على الهاتف وسطح المكتب.',
+      measurement: 'انخفاض الصفحات ذات المحتوى غير المرتبط، تحسن تفاعل FAQ والنقر إلى الفئات/المنتجات.'
+    },
+    'SEO & category demand capture': {
+      problem: 'صفحات فئات محددة تفتقد عناصر SEO قابلة للفحص مثل العنوان أو الوصف أو H1 أو canonical.',
+      solution: 'إكمال عناصر SEO لكل فئة، بناء قالب موحد، وربط الفئات بصفحات المنتجات والبحث الداخلي.',
+      method: 'جدول فئات، قالب metadata، فحص Search Console، ومراجعة الفهرسة بعد النشر.',
+      measurement: 'نسبة اكتمال عناصر الفئات، الصفحات المفهرسة، والنقرات العضوية لكل فئة.'
+    },
+    'SEO & category demand growth': {
+      problem: 'هناك كتالوج وفئات فعلية، لكن تغطية البحث لكل نية شراء ليست مستغلة بالكامل.',
+      solution: 'توسيع صفحات الفئات والـ landing pages حسب نية البحث والمنتج والاستخدام.',
+      method: 'خريطة كلمات، صفحة لكل مجموعة طلب، روابط داخلية، ثم اختبار الظهور والنقر.',
+      measurement: 'عدد الكلمات المؤهلة، الزيارات العضوية، ونقرات صفحات الفئات.'
+    },
+    'Product conversion & trust': {
+      problem: 'عينة صفحات المنتجات لا تعرض social proof بشكل واضح كافٍ.',
+      solution: 'إظهار التقييمات والمراجعات والصور والشحن والضمان قرب قرار الشراء.',
+      method: 'اختبار A/B لترتيب عناصر الثقة ومقارنة صفحة قبل/بعد.',
+      measurement: 'إضافة للسلة، بدء checkout، ومعدل التحويل لكل صفحة.'
+    },
+    'Product merchandising & CRO': {
+      problem: 'الكتالوج ومسار الشراء موجودان، لكن ترتيب المنتجات والمقارنة والعروض يحتاج اختبارًا منظمًا.',
+      solution: 'ترتيب المنتجات حسب الطلب والهامش، إضافة مقارنات وbundles، وتحسين CTA.',
+      method: 'تحليل البحث الداخلي، خرائط النقر، وتجارب أسبوعية على الفئات والمنتجات.',
+      measurement: 'CTR للمنتجات، add-to-cart، متوسط قيمة السلة، ومعدل التحويل.'
+    },
+    'B2B / project lead capture': {
+      problem: 'صفحة المشاريع/الشركات موجودة، لكن طلب عرض سعر مخصص غير ظاهر في العينة.',
+      solution: 'إضافة نموذج RFQ قصير مع نوع المشروع والكمية والموعد ووسيلة التواصل.',
+      method: 'CTA واضح في صفحة B2B، نموذج مع tracking، وإشعار فوري للفريق.',
+      measurement: 'عدد RFQs المؤهلة، زمن الرد، ونسبة التحول إلى اجتماع أو عرض.'
+    }
+  };
+  return plans[service] || {
+    problem: reason,
+    solution: 'تحويل الملاحظة إلى تجربة محددة مرتبطة بصفحة أو خطوة في مسار العميل.',
+    method: 'تحديد baseline، تنفيذ تغيير واحد، ثم مقارنة النتائج قبل/بعد.',
+    measurement: 'مؤشر تحويل مرتبط مباشرة بالمشكلة، وليس رقمًا عامًا.'
+  };
+}
 function row({service,reason,lowRate,highRate,confidence,evidenceClass='modeled_opportunity'},base){
   const low=roundNice(base.low*lowRate),high=Math.max(low,roundNice(base.high*highRate));
-  return {service,issues:[reason],modeled:evidenceClass!=='verified_gap',evidenceClass,confidence,monthlyRange:{low,high},annualRange:{low:low*12,high:high*12}};
+  const plan=actionPlan(service, reason, evidenceClass);
+  return {service,issues:[reason],...plan,modeled:evidenceClass!=='verified_gap',evidenceClass,confidence,monthlyRange:{low,high},annualRange:{low:low*12,high:high*12}};
 }
 
 function verifiedRows(audit={},base){
