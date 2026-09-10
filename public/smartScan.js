@@ -2,6 +2,7 @@
   const form = document.querySelector('#scan-form');
   const status = document.querySelector('#scan-status');
   const result = document.querySelector('#scan-result');
+  const languageSelect = document.querySelector('#language');
   if (!form || !status || !result) return;
 
   const esc = (value = '') => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -51,7 +52,7 @@
     const rows = breakdown.slice(0,6).map(item => {
       const hi = Math.round(Number(item.annualRange?.high || 0)/12), lo = Math.round(Number(item.annualRange?.low || 0)/12);
       const evidenceTag = item.evidenceClass === 'verified_gap' ? 'فجوة مثبتة' : 'فرصة نمو نمذجية';
-      return `<div class="leak-row"><div><h3>${esc(item.service)}</h3><p>${esc((item.issues || []).join(' · '))}</p><p style="font-size:11px;color:#c9b76e">${esc(evidenceTag)} · ثقة ${money(item.confidence || 0)}%</p></div><div class="leak-value">${money(hi)}<small>${money(lo)}–${money(hi)} ريال / شهر تقديري</small></div></div>`;
+      return `<div class="leak-row finding"><div><h3>${esc(item.service)}</h3><p><strong>المشكلة المحددة:</strong> ${esc(item.problem || (item.issues || []).join(' · '))}</p><p><strong>الدليل:</strong> ${esc((item.issues || []).join(' · '))}</p><p><strong>الحل:</strong> ${esc(item.solution || '')}</p><p><strong>طريقة التنفيذ:</strong> ${esc(item.method || '')}</p><p><strong>القياس:</strong> ${esc(item.measurement || '')}</p><p style="font-size:11px;color:#c9b76e">${esc(evidenceTag)} · ثقة ${money(item.confidence || 0)}%</p></div><div class="leak-value">${money(hi)}<small>${money(lo)}–${money(hi)} ريال / شهر تقديري</small></div></div>`;
     }).join('');
 
     const known = [
@@ -72,7 +73,7 @@
       ['طلب عرض سعر', funnel.quoteRequestDetected || funnel.b2bConversionDetected], ['واتساب', funnel.whatsappDetected], ['تقييمات', funnel.reviewsDetected], ['ولاء', funnel.loyaltyDetected], ['تقسيط', funnel.installmentDetected], ['توصيل', funnel.shippingDetected || funnel.freeDeliveryDetected]
     ].map(([label,yes]) => `<span style="display:inline-block;margin:4px 8px 4px 0;font-size:12px;color:${yes?'#c7e4b5':'#9d9789'}">${yes?'●':'○'} ${esc(label)}</span>`).join('');
 
-    const stackRows = [tri('Analytics / GTM', audit.signals?.hasAnalytics), tri('Meta Pixel', audit.signals?.hasMetaPixel), tri('Instagram', audit.signals?.hasInstagram), tri('Facebook', audit.signals?.hasFacebook)].join('');
+    const trackers = funnel.trackers || {}; const trackerState = key => trackers[key]?.state === 'verified' ? true : null; const stackRows = [tri('Google Tag Manager', trackerState('googleTagManager')), tri('Google Analytics', trackerState('googleAnalytics')), tri('Meta Pixel', trackerState('metaPixel')), tri('TikTok Pixel', trackerState('tiktokPixel')), tri('Snapchat Pixel', trackerState('snapchatPixel')), tri('Google Ads tag', trackerState('googleAds'))].join('');
     const email = data.emailHtml ? `<details class="outreach-preview" open><summary>Exact email design that will be sent</summary><p><strong>${esc(data.outreach?.subject || '')}</strong></p><iframe title="Email preview" style="width:100%;height:760px;border:1px solid #3a362d;border-radius:16px;background:#fff" sandbox="" srcdoc="${esc(data.emailHtml)}"></iframe><details><summary>Plain-text fallback</summary><pre>${esc(data.outreach?.body || '')}</pre></details></details>` : '';
 
     const baselineHtml = baseline.monthlyCommerceScenarioRange ? `<p><strong>سيناريو التجارة المباشرة قبل التحسين:</strong> ${ri(baseline.monthlyCommerceScenarioRange.low)}–${ri(baseline.monthlyCommerceScenarioRange.high)} شهريًا · مبني على وسيط سعر مرصود ${ri(baseline.medianObservedTicket)} ونطاق ${money(baseline.modeledOrderRange?.low)}–${money(baseline.modeledOrderRange?.high)} طلب شراء شهريًا كنموذج وليس رقم مبيعات فعلي.</p>` : '';
@@ -96,7 +97,7 @@
     event.preventDefault(); event.stopImmediatePropagation();
     const website = normalizeUrl(form.website.value), button = form.querySelector('button'); button.disabled = true; result.innerHTML = '';
     status.textContent = 'أحلل المشروع من الرابط: النشاط، المنصة، المنتجات، الأسعار، مسار الإيراد الأساسي والثانوي، العملاء، والـmarketing stack ثم أبني التقدير…';
-    try { const data = await scan({ lead:{ name:nameFromUrl(website), website }, assumptions:{} }); render(data); status.textContent = 'Live scan complete · business inferred directly from URL · public data only · figures are estimates'; }
+    try { const data = await scan({ lead:{ name:nameFromUrl(website), website }, language: languageSelect?.value === 'en' ? 'en' : 'ar', assumptions:{} }); render(data); status.textContent = 'Live scan complete · business inferred directly from URL · public data only · figures are estimates'; }
     catch (error) { status.textContent = `Scan error: ${error.message}`; }
     finally { button.disabled = false; }
   }, true);

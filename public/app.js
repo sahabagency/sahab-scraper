@@ -114,7 +114,7 @@ results.addEventListener('click', async event => {
 });
 
 if (form) form.addEventListener('submit', async event => {
-  event.preventDefault(); const payload=Object.fromEntries(new FormData(form).entries()); payload.limit=Number(payload.limit); payload.averageTicket=Number(payload.averageTicket); payload.monthlyLeadEstimate=Number(payload.monthlyLeadEstimate);
+  event.preventDefault(); const payload=Object.fromEntries(new FormData(form).entries()); payload.limit=Number(payload.limit); payload.averageTicket=Number(payload.averageTicket); payload.monthlyLeadEstimate=Number(payload.monthlyLeadEstimate); payload.language = document.querySelector('#language')?.value === 'en' ? 'en' : 'ar';
   statusEl.textContent='Discovering businesses, understanding business models/products, resolving official presence, auditing evidence, modeling commercial ranges, qualifying leads, and writing outreach…'; form.querySelector('button').disabled=true;
   try { const response=await fetch('/api/campaigns',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)}); const data=await response.json(); if(!response.ok) throw new Error(data.error||'Campaign failed'); renderCampaign(data); const s=data.qualificationSummary||{}; statusEl.textContent=`Done: ${data.leads.length} audited · A ${s.A||0} · B ${s.B||0} · C ${s.C||0} · Reject ${s.REJECT||0} · send-eligible ${s.sendEligible||0}.`; }
   catch(error){statusEl.textContent=`Error: ${error.message}`;} finally{form.querySelector('button').disabled=false;}

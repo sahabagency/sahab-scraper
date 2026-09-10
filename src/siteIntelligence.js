@@ -93,6 +93,14 @@ function buildSignals({html,text,pages}){
   const lower=(text+' '+html).toLowerCase();
   const profileLinks={instagram:/instagram\.com\//i.test(html),facebook:/facebook\.com\//i.test(html),linkedin:/linkedin\.com\//i.test(html),tiktok:/tiktok\.com\//i.test(html),x:/(?:x\.com|twitter\.com)\//i.test(html)};
   const b2bPageDetected=pages.some(p=>linkType(p.url)==='b2b');
+  const trackers={
+    googleTagManager:{state:/googletagmanager\.com\/gtm\.js|gtm-[a-z0-9]+/i.test(html)?'verified':'unknown',evidence:((html.match(/GTM-[A-Z0-9]+/ig)||[]).slice(0,3))},
+    googleAnalytics:{state:/gtag\s*\(|google-analytics\.com|googletagmanager/i.test(html)?'verified':'unknown',evidence:[]},
+    metaPixel:{state:/connect\.facebook\.net|fbq\s*\(|facebook\.com\/tr/i.test(html)?'verified':'unknown',evidence:[]},
+    tiktokPixel:{state:/analytics\.tiktok\.com|ttq\s*\.|ttq\s*\(/i.test(html)?'verified':'unknown',evidence:[]},
+    snapchatPixel:{state:/sc-static\.snapchat\.com|snaptr\s*\(/i.test(html)?'verified':'unknown',evidence:[]},
+    googleAds:{state:/googleadservices\.com|AW-[0-9]+|gtag\s*\([^)]*config/i.test(html)?'verified':'unknown',evidence:[]}
+  };
   return {
     cartDetected:/أضف للسلة|add to cart|checkout|سلة التسوق/i.test(lower),
     checkoutDetected:/checkout|إتمام الطلب|الدفع|تمارا|تابي|apple pay|stc pay/i.test(lower),
@@ -104,7 +112,8 @@ function buildSignals({html,text,pages}){
     reviewsDetected:/آراء العملاء|اراء العملاء|تقييم|review|rating/i.test(lower),
     shippingDetected:/شحن|توصيل|shipping|delivery/i.test(lower),
     whatsappDetected:/wa\.me|whatsapp|واتساب/i.test(lower),
-    profileLinks
+    profileLinks,
+    trackers
   };
 }
 
