@@ -67,7 +67,7 @@ app.post('/unsubscribe', (req, res) => handleUnsubscribe(req, res, true));
 
 app.post('/api/campaigns', async (req, res) => {
   try {
-    const { name, industry, location, limit = 20, averageTicket = 2500, monthlyLeadEstimate = 40, bookingUrl = process.env.CALENDAR_BOOKING_URL || '' } = req.body || {};
+    const { name, industry, location, limit = 20, averageTicket = 2500, monthlyLeadEstimate = 40, bookingUrl = process.env.CALENDAR_BOOKING_URL || '', language = 'ar' } = req.body || {};
     if (!industry || !location) return res.status(400).json({ error: 'industry and location are required' });
     const id = crypto.randomUUID();
     const campaign = { id, name: name || `${industry} — ${location}`, industry, location, bookingUrl, averageTicket: Number(averageTicket) || 2500, monthlyLeadEstimate: Number(monthlyLeadEstimate) || 40, status: 'discovering', createdAt: new Date().toISOString(), leads: [] };
@@ -81,7 +81,7 @@ app.post('/api/campaigns', async (req, res) => {
       if (audit.businessIntelligence?.brandName && (!lead.name || /^https?:|\.[a-z]{2,}$/i.test(lead.name))) lead = { ...lead, name: audit.businessIntelligence.brandName };
       const resolvedIndustry = industry || audit.businessIntelligence?.industry || '';
       const qualification = qualifyLead({ lead, audit }); audit.qualification = qualification;
-      const outreach = await buildOutreach({ lead, audit, bookingUrl: campaign.bookingUrl, industry: resolvedIndustry, location });
+      const outreach = await buildOutreach({ lead, audit, bookingUrl: campaign.bookingUrl, industry: resolvedIndustry, location, language: language === 'en' ? 'en' : 'ar' });
       const fullLead = { ...lead, audit, outreach, qualification, status: statusForQualification(lead, qualification) };
       if (dbConfigured()) fullLead.id = await saveLead(campaign.id, fullLead); audited.push(fullLead);
     }
@@ -98,14 +98,15 @@ app.get('/api/campaigns/:id', async (req, res) => { try { if (dbConfigured()) { 
 app.post('/api/leads/audit', async (req, res) => {
   try {
     const inputLead = req.body?.lead; if (!inputLead?.website && !inputLead?.name) return res.status(400).json({ error: 'lead.name or lead.website is required' });
+    const language = req.body?.language === 'en' ? 'en' : 'ar';
     const location = req.body?.location || ''; const requestedIndustry = req.body?.industry || '';
     let lead = await enrichLeadContact(inputLead, { location });
     const audit = await auditLead(lead, { ...(req.body?.assumptions || {}), industry: requestedIndustry });
     if (audit.businessIntelligence?.brandName) lead = { ...lead, name: audit.businessIntelligence.brandName };
     const resolvedIndustry = requestedIndustry || audit.businessIntelligence?.industry || '';
     const qualification = qualifyLead({ lead, audit }); audit.qualification = qualification;
-    const outreach = await buildOutreach({ lead, audit, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '', industry: resolvedIndustry, location });
-    const emailHtml = buildXrayEmailHtml({ name: lead.name, website: lead.website, audit, body: outreach.body, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '' });
+    const outreach = await buildOutreach({ lead, audit, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '', industry: resolvedIndustry, location, language });
+    const emailHtml = buildXrayEmailHtml({ name: lead.name, website: lead.website, audit, body: outreach.body, bookingUrl: req.body?.bookingUrl || process.env.CALENDAR_BOOKING_URL || '', language });
     res.json({ lead, audit, qualification, outreach, emailHtml });
   } catch (error) { res.status(500).json({ error: error.message || 'Audit failed' }); }
 });
@@ -117,7 +118,7 @@ app.post('/api/leads/:id/send', async (req, res) => {
     claim = await claimSend(req.params.id, policy.dailyLimit); if (!claim?.ok) return res.status(409).json(claim);
     const unsubToken = createUnsubscribeToken({ leadId: req.params.id, email: claim.email }); const unsubscribeUrl = `${requestBaseUrl(req)}/unsubscribe?t=${encodeURIComponent(unsubToken)}`;
     const bodyWithOptOut = `${String(claim.body || '').trim()}\n\nإذا ما يناسبكم هذا النوع من الرسائل، تقدرون توقفونها من هنا:\n${unsubscribeUrl}`;
-    const html = buildXrayEmailHtml({ name: claim.name, website: claim.website, audit: claim.audit || {}, body: claim.body, bookingUrl: process.env.CALENDAR_BOOKING_URL || '', unsubscribeUrl });
+    const html = buildXrayEmailHtml({ name: claim.name, website: claim.website, audit: claim.audit || {}, body: claim.body, bookingUrl: process.env.CALENDAR_BOOKING_URL || '', unsubscribeUrl, language: claim.language === 'en' ? 'en' : 'ar' });
     const sent = await sendGmail({ to: claim.email, subject: claim.subject, body: bodyWithOptOut, html, unsubscribeUrl }); await markSent(req.params.id, sent.id, sent.threadId || null);
     res.json({ ok: true, leadId: req.params.id, messageId: sent.id, threadId: sent.threadId || null });
   } catch (error) { if (claim?.ok) await markSendFailed(req.params.id, error.message).catch(() => {}); res.status(500).json({ ok: false, error: error.message || 'send failed' }); }
