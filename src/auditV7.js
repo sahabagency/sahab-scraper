@@ -58,6 +58,24 @@ function actionPlan(service, reason, evidenceClass) {
       method: 'خريطة كلمات، صفحة لكل مجموعة طلب، روابط داخلية، ثم اختبار الظهور والنقر.',
       measurement: 'عدد الكلمات المؤهلة، الزيارات العضوية، ونقرات صفحات الفئات.'
     },
+    'Search & category demand growth': {
+      problem: 'تم رصد فئات فعلية، لكن تغطية نوايا الشراء في البحث ليست مستغلة بالكامل.',
+      solution: 'بناء خريطة كلمات حسب الفئة والاستخدام، إنشاء صفحات فئات مخصصة، وربطها بالمنتجات والبحث الداخلي.',
+      method: 'تجميع الكلمات من Search Console والبحث الداخلي، إنشاء صفحة لكل نية، ثم متابعة الظهور والنقرات قبل وبعد.',
+      measurement: 'الكلمات المؤهلة، الزيارات العضوية، CTR، ونقرات صفحات الفئات إلى المنتجات.'
+    },
+    'Retention & loyalty activation': {
+      problem: 'برنامج الولاء ظاهر، لكن التفعيل والشراء المتكرر يحتاجان دورة اختبار واضحة.',
+      solution: 'إعادة تصميم onboarding الولاء، تشغيل رسائل تذكير وعروض حسب السلوك، وربط المكافأة بالشراء المتكرر.',
+      method: 'تقسيم الأعضاء حسب آخر شراء، اختبار رسائل trigger، ومقارنة cohort قبل وبعد التفعيل.',
+      measurement: 'معدل تفعيل الولاء، الشراء المتكرر، الإيراد لكل عضو، ونسبة استخدام المكافآت.'
+    },
+    'B2B / project pipeline expansion': {
+      problem: 'مسار المشاريع ظاهر، لكن توسيع pipeline يحتاج مسار طلب عرض سعر ومتابعة قابلين للقياس.',
+      solution: 'إنشاء RFQ مختصر للمشروع والكمية والموعد، مع صفحة هبوط ورسالة متابعة آلية.',
+      method: 'CTA في صفحات B2B، نموذج موصول بالتتبع، SLA للرد، وتجربة مصادر طلب مختلفة.',
+      measurement: 'عدد RFQs المؤهلة، زمن الرد، نسبة التحول إلى اجتماع، وقيمة العروض.'
+    },
     'Product conversion & trust': {
       problem: 'عينة صفحات المنتجات لا تعرض social proof بشكل واضح كافٍ.',
       solution: 'إظهار التقييمات والمراجعات والصور والشحن والضمان قرب قرار الشراء.',
@@ -81,6 +99,9 @@ function actionPlan(service, reason, evidenceClass) {
     'Content & trust quality': { problemEn:'Irrelevant or off-topic customer-facing content is visible on the site.', solutionEn:'Remove the unrelated copy, rewrite the FAQ around the actual products, and link each answer to a relevant product or category.', methodEn:'Review every FAQ and key page, then test relevance and clarity on mobile and desktop.', measurementEn:'Track removal of irrelevant content, FAQ engagement, and clicks to products/categories.' },
     'SEO & category demand capture': { problemEn:'Sampled category pages are missing observable SEO elements such as title, meta description, H1, or canonical.', solutionEn:'Complete the SEO elements for every category, standardize the template, and connect categories to products and internal search.', methodEn:'Create a category matrix, metadata template, Search Console checks, and re-indexing review.', measurementEn:'Measure element completion, indexed pages, and organic clicks per category.' },
     'SEO & category demand growth': { problemEn:'The site has real categories, but search coverage across purchase intents is not fully developed.', solutionEn:'Expand category and landing pages around search intent, product, and use case.', methodEn:'Build a keyword map, publish intent-specific pages, add internal links, then test impressions and clicks.', measurementEn:'Track qualified keywords, organic sessions, and category-page clicks.' },
+    'Search & category demand growth': { problemEn:'The site has real categories, but search coverage across purchase intents is not fully developed.', solutionEn:'Build an intent map, publish category and use-case landing pages, and connect them to products and internal search.', methodEn:'Use Search Console and internal search data, publish one page per intent, then compare impressions and clicks before and after.', measurementEn:'Track qualified keywords, organic sessions, CTR, and category-to-product clicks.' },
+    'Retention & loyalty activation': { problemEn:'The loyalty program is visible, but activation and repeat purchase need a structured test cycle.', solutionEn:'Improve loyalty onboarding, trigger behavior-based reminders and offers, and connect rewards to repeat purchase.', methodEn:'Segment members by recency, test trigger messages, and compare pre/post cohorts.', measurementEn:'Track activation, repeat purchase rate, revenue per member, and reward redemption.' },
+    'B2B / project pipeline expansion': { problemEn:'A project path is visible, but pipeline growth needs a measurable request and follow-up path.', solutionEn:'Create a short RFQ for project type, quantity, and timeline, with a landing page and follow-up sequence.', methodEn:'Add a B2B CTA, instrument the form, set a response SLA, and test acquisition sources.', measurementEn:'Track qualified RFQs, response time, meeting conversion, and proposal value.' },
     'Product conversion & trust': { problemEn:'The sampled product pages do not show enough visible social proof near the buying decision.', solutionEn:'Place reviews, ratings, photos, delivery, and warranty information beside the purchase action.', methodEn:'A/B test the order and visibility of trust elements on product pages.', measurementEn:'Track add-to-cart, checkout starts, and conversion rate per product page.' },
     'Product merchandising & CRO': { problemEn:'The catalog and buying path exist, but product ordering, comparison, and offers need structured testing.', solutionEn:'Rank products by demand and margin, add comparisons and bundles, and improve the CTA.', methodEn:'Use internal search data, click maps, and weekly category/product experiments.', measurementEn:'Track product CTR, add-to-cart, average order value, and conversion rate.' },
     'B2B / project lead capture': { problemEn:'A projects/business page is visible, but a dedicated request-for-quote path was not observable in the sample.', solutionEn:'Add a short RFQ form with project type, quantity, timeline, and contact method.', methodEn:'Place a clear CTA on the B2B page, instrument the form, and notify the team immediately.', measurementEn:'Track qualified RFQs, response time, and conversion to a meeting or proposal.' }
