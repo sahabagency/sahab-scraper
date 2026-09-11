@@ -35,7 +35,7 @@
       <section class="panel">
         <form id="campaign-form" class="grid">
           <label>Campaign name<input name="name" placeholder="Riyadh Clinics — Sep" /></label>
-          <label>Industry<input name="industry" placeholder="Aesthetic clinics" required /></label>
+          <label>Industry / sector<input name="industry" list="industry-suggestions" placeholder="Aesthetic clinics" required /><datalist id="industry-suggestions"><option value="Aesthetic clinics"><option value="Restaurants & cafes"><option value="E-commerce & retail"><option value="Hotels & hospitality"><option value="Real estate"><option value="Education & training"><option value="Medical clinics"><option value="Fitness & wellness"><option value="Home services"><option value="B2B suppliers & manufacturers"><option value="Travel agencies"><option value="Professional services"></datalist></label>
           <label>Location<input name="location" placeholder="Riyadh, Saudi Arabia" required /></label>
           <label>Lead count<input name="limit" type="number" value="10" min="1" max="60" /></label>
           <label>Average ticket<input name="averageTicket" type="number" value="2500" min="1" /></label>
