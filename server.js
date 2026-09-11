@@ -65,15 +65,17 @@ async function handleUnsubscribe(req, res, oneClick = false) {
 app.get('/unsubscribe', (req, res) => handleUnsubscribe(req, res, false));
 app.post('/unsubscribe', (req, res) => handleUnsubscribe(req, res, true));
 
+async function persistSafely(action) { try { if (!dbConfigured()) return false; await action(); return true; } catch (error) { console.error('[DB] persistence degraded:', error.message || error); return false; } }
+
 app.post('/api/campaigns', async (req, res) => {
   try {
     const { name, industry, location, limit = 20, averageTicket = 2500, monthlyLeadEstimate = 40, bookingUrl = process.env.CALENDAR_BOOKING_URL || '', language = 'ar' } = req.body || {};
     if (!industry || !location) return res.status(400).json({ error: 'industry and location are required' });
     const id = crypto.randomUUID();
     const campaign = { id, name: name || `${industry} — ${location}`, industry, location, bookingUrl, averageTicket: Number(averageTicket) || 2500, monthlyLeadEstimate: Number(monthlyLeadEstimate) || 40, status: 'discovering', createdAt: new Date().toISOString(), leads: [] };
-    campaigns.set(id, campaign); if (dbConfigured()) await saveCampaign(campaign);
+    campaigns.set(id, campaign); let persisted = await persistSafely(() => saveCampaign(campaign));
     const rawLeads = await discoverLeads({ industry, location, limit: Math.min(Number(limit) || 20, 60) });
-    campaign.status = 'auditing'; if (dbConfigured()) await saveCampaign(campaign);
+    campaign.status = 'auditing'; if (persisted) persisted = await persistSafely(() => saveCampaign(campaign));
     const audited = [];
     for (const rawLead of rawLeads) {
       let lead = await enrichLeadContact(rawLead, { location });
@@ -83,17 +85,17 @@ app.post('/api/campaigns', async (req, res) => {
       const qualification = qualifyLead({ lead, audit }); audit.qualification = qualification;
       const outreach = await buildOutreach({ lead, audit, bookingUrl: campaign.bookingUrl, industry: resolvedIndustry, location, language: language === 'en' ? 'en' : 'ar' });
       const fullLead = { ...lead, audit, outreach, qualification, status: statusForQualification(lead, qualification) };
-      if (dbConfigured()) fullLead.id = await saveLead(campaign.id, fullLead); audited.push(fullLead);
+      if (persisted) { try { fullLead.id = await saveLead(campaign.id, fullLead); } catch (error) { console.error('[DB] lead persistence degraded:', error.message || error); persisted = false; } } audited.push(fullLead);
     }
     audited.sort((a, b) => (b.qualification?.score || 0) - (a.qualification?.score || 0));
     campaign.leads = audited; campaign.status = 'ready';
-    campaign.qualificationSummary = { A: audited.filter(x => x.qualification?.tier === 'A').length, B: audited.filter(x => x.qualification?.tier === 'B').length, C: audited.filter(x => x.qualification?.tier === 'C').length, REJECT: audited.filter(x => x.qualification?.tier === 'REJECT').length, sendEligible: audited.filter(x => x.qualification?.sendEligible).length };
-    if (dbConfigured()) await saveCampaign(campaign); res.json(campaign);
+    campaign.persistence = persisted ? 'supabase' : 'memory_only'; campaign.qualificationSummary = { A: audited.filter(x => x.qualification?.tier === 'A').length, B: audited.filter(x => x.qualification?.tier === 'B').length, C: audited.filter(x => x.qualification?.tier === 'C').length, REJECT: audited.filter(x => x.qualification?.tier === 'REJECT').length, sendEligible: audited.filter(x => x.qualification?.sendEligible).length };
+    if (persisted) persisted = await persistSafely(() => saveCampaign(campaign)); campaign.persistence = persisted ? 'supabase' : 'memory_only'; res.json(campaign);
   } catch (error) { console.error(error); res.status(500).json({ error: error.message || 'Campaign failed' }); }
 });
 
-app.get('/api/campaigns', async (_req, res) => { try { if (dbConfigured()) return res.json(await listCampaigns()); res.json(Array.from(campaigns.values()).map(c => ({ id: c.id, name: c.name, industry: c.industry, location: c.location, status: c.status, createdAt: c.createdAt, leadCount: c.leads.length }))); } catch (error) { res.status(500).json({ error: error.message }); } });
-app.get('/api/campaigns/:id', async (req, res) => { try { if (dbConfigured()) { const campaign = await getCampaign(req.params.id); if (!campaign) return res.status(404).json({ error: 'Campaign not found' }); return res.json(campaign); } const campaign = campaigns.get(req.params.id); if (!campaign) return res.status(404).json({ error: 'Campaign not found' }); res.json(campaign); } catch (error) { res.status(500).json({ error: error.message }); } });
+app.get('/api/campaigns', async (_req, res) => { try { if (dbConfigured()) { try { return res.json(await listCampaigns()); } catch (error) { console.error('[DB] list degraded:', error.message || error); } } res.json(Array.from(campaigns.values()).map(c => ({ id: c.id, name: c.name, industry: c.industry, location: c.location, status: c.status, persistence: c.persistence || 'memory_only', createdAt: c.createdAt, leadCount: c.leads.length }))); } catch (error) { res.status(500).json({ error: error.message }); } });
+app.get('/api/campaigns/:id', async (req, res) => { try { if (dbConfigured()) { try { const campaign = await getCampaign(req.params.id); if (campaign) return res.json(campaign); } catch (error) { console.error('[DB] campaign read degraded:', error.message || error); } } const campaign = campaigns.get(req.params.id); if (!campaign) return res.status(404).json({ error: 'Campaign not found' }); res.json(campaign); } catch (error) { res.status(500).json({ error: error.message }); } });
 
 app.post('/api/leads/audit', async (req, res) => {
   try {
