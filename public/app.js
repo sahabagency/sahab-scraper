@@ -83,7 +83,8 @@ function renderCampaign(campaign) {
   countEl.textContent = `${leads.length} leads · A ${summary.A || 0} · B ${summary.B || 0} · C ${summary.C || 0} · Reject ${summary.REJECT || 0}`;
   if (!leads.length) { results.className='results empty'; results.textContent='No leads found.'; return; }
   results.className='results';
-  results.innerHTML = leads.map((lead,index)=>{
+  const persistenceNotice = campaign.persistence === 'memory_only' ? '<p class="fine" style="color:#d9a441">Results are available for review, but permanent saving is temporarily unavailable. Sending stays locked until database storage is restored.</p>' : '';
+  results.innerHTML = persistenceNotice + leads.map((lead,index)=>{
     const audit=lead.audit||{}; const bi=audit.businessIntelligence||{}; const annual=audit.opportunity?.annualRange||{low:0,high:0}; const showMoney = audit.opportunity?.displayEligible === true; const q = lead.qualification || audit.qualification || {}; const profile = audit.commercialProfile || {};
     const issues=(audit.issues||[]).slice(0,5).map(i=>`<li><strong>${esc(i.severity)}</strong> — ${esc(i.title)}${i.monetizable===false?' · informational only':''}</li>`).join('');
     const breakdown=(audit.opportunityBreakdown||[]).slice(0,6).map(item=>`<tr><td>${esc(item.service)}</td><td>${showMoney ? `${money(item.annualRange?.low)}–${money(item.annualRange?.high)} ريال` : 'confidence gate'}</td><td>${esc((item.issues||[]).slice(0,2).join(', '))}</td></tr>`).join('');
