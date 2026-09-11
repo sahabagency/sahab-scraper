@@ -37,7 +37,7 @@ app.get('/api/config', async (_req, res) => {
   if (dbConfigured()) { try { persistenceStats = await dbStatus(); } catch (error) { persistenceStats = { error: error.message }; } }
   res.json({
     googlePlacesReady: Boolean(process.env.GOOGLE_MAPS_API_KEY), openAiReady: Boolean(process.env.OPENAI_API_KEY), bookingUrlReady: Boolean(process.env.CALENDAR_BOOKING_URL), webDiscoveryReady: Boolean(process.env.BRAVE_SEARCH_API_KEY),
-    gmailOauthReady: gmail.oauthConfigured, gmailConnected: gmail.connected, persistenceReady: dbConfigured(), persistenceStats, automation: automationStatus(), bookingUrl: process.env.CALENDAR_BOOKING_URL || '', outbound: { ...outboundRuntimeStatus(), persistence: dbConfigured() ? 'supabase' : 'memory_only' }
+    gmailOauthReady: gmail.oauthConfigured, gmailConnected: gmail.connected, persistenceReady: dbConfigured() && !persistenceStats?.error, persistenceStats, automation: automationStatus(), bookingUrl: process.env.CALENDAR_BOOKING_URL || '', outbound: { ...outboundRuntimeStatus(), persistence: dbConfigured() && !persistenceStats?.error ? 'supabase' : 'memory_only' }
   });
 });
 
