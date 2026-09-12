@@ -13,6 +13,19 @@ function normalizeUrl(value='') { const trimmed = value.trim(); if (!trimmed) re
 function nameFromUrl(value='') { try { return new URL(normalizeUrl(value)).hostname.replace(/^www\./,'').split('.')[0].replace(/[-_]+/g,' '); } catch { return value; } }
 function qualificationBadge(q = {}) { const tier = q.tier || '—'; const label = q.label || 'Not qualified yet'; return `<span style="display:inline-flex;align-items:center;gap:8px;border:1px solid #d8c47e;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:800">${esc(tier)} · ${esc(q.score ?? '—')}/100 · ${esc(label)}</span>`; }
 
+function trackerStackHtml(bi = {}) {
+  const trackers = bi.funnelSignals?.trackers || bi.marketingStack?.trackers || {};
+  const labels = {googleTagManager:'Google Tag Manager',googleAnalytics:'Google Analytics',metaPixel:'Meta Pixel',tiktokPixel:'TikTok Pixel',snapchatPixel:'Snapchat Pixel',googleAds:'Google Ads'};
+  return Object.entries(labels).map(([key,label]) => {
+    const item = trackers[key] || {};
+    const verified = item.state === 'verified';
+    const color = verified ? '#c7e4b5' : '#e0c878';
+    const state = verified ? 'مؤكد من كود الموقع' : 'لم يظهر علنًا — لا يعني أنه غير موجود';
+    const evidence = (item.evidence || []).slice(0,2).join(' · ');
+    return \`<span style="display:inline-block;margin:3px 8px 3px 0;color:\${color}" title="\${esc(evidence || item.reason || state)}">\${verified?'●':'◐'} \${label} · \${state}\${evidence ? \`<small style="display:block;color:#a89d78;margin-left:14px">\${esc(evidence)}</small>\` : ''}</span>\`;
+  }).join('');
+}
+
 async function loadConfig() {
   const config = await fetch('/api/config', { cache: 'no-store' }).then(r => r.json());
   const ready = [['Places', config.googlePlacesReady],['OpenAI', config.openAiReady],['Web', config.webDiscoveryReady],['Booking', config.bookingUrlReady],['DB', config.persistenceReady && !config.persistenceStats?.error]];
@@ -38,10 +51,10 @@ function businessIntelBox(bi = {}) {
   const products = (bi.products || []).slice(0, 6).join(' · ');
   const segments = (bi.targetSegments || []).slice(0, 5).join(' · ');
   const props = (bi.valuePropositions || []).slice(0, 5).join(' · ');
-  const prices = (bi.priceSamples || []).slice(0, 8).map(x => `${money(x)} ريال`).join(' · ');
+  const prices = (bi.priceSamples || []).slice(0, 8).map(x => \`\${money(x)} ريال\`).join(' · ');
   const f = bi.funnelSignals || {};
   const funnel = [f.cartDetected?'سلة شراء':null,f.checkoutDetected?'Checkout':null,f.b2bSecondaryDetected||f.b2bDetected?'B2B/مشاريع':null,f.quoteRequestDetected?'طلب عرض سعر':null,f.whatsappDetected?'WhatsApp':null,f.reviewsDetected?'Reviews':null,f.blogDetected?'Content/Blog':null].filter(Boolean).join(' · ');
-  return `<div class="leak-row"><div><h3>فهم المشروع من الرابط</h3><p><strong>${esc(bi.brandName || '')}</strong>${bi.brandName?' · ':''}<strong>${esc(bi.industry || 'غير محسوم')}</strong> · ${esc(bi.businessModel || '')}${bi.platform ? ` · منصة ${esc(bi.platform)}` : ''}${bi.currency ? ` · العملة ${esc(bi.currency)}` : ''}</p>${products ? `<p><strong>المنتجات:</strong> ${esc(products)}</p>` : ''}${cats ? `<p><strong>الأقسام:</strong> ${esc(cats)}</p>` : ''}${segments ? `<p><strong>العملاء المستهدفون:</strong> ${esc(segments)}</p>` : ''}${props ? `<p><strong>القيمة/التموضع:</strong> ${esc(props)}</p>` : ''}${funnel ? `<p><strong>مسار البيع المرصود:</strong> ${esc(funnel)}</p>` : ''}${prices ? `<p><strong>عينات أسعار عامة:</strong> ${esc(prices)}</p>` : ''}<p><strong>مصدر متوسط القيمة:</strong> ${esc(bi.averageTicketSource || 'غير محدد')} · <strong>مصدر حجم الطلب:</strong> ${esc(bi.monthlyLeadSource || 'غير محدد')}</p></div><div class="leak-value">${money(bi.confidence || 0)}%<small>business-context confidence</small></div></div>`;
+  return \`<div class="leak-row"><div><h3>فهم المشروع من الرابط</h3><p><strong>\${esc(bi.brandName || '')}</strong>\${bi.brandName?' · ':''}<strong>\${esc(bi.industry || 'غير محسوم')}</strong> · \${esc(bi.businessModel || '')}\${bi.platform ? \` · منصة \${esc(bi.platform)}\` : ''}\${bi.currency ? \` · العملة \${esc(bi.currency)}\` : ''}</p>\${products ? \`<p><strong>المنتجات:</strong> \${esc(products)}</p>\` : ''}\${cats ? \`<p><strong>الأقسام:</strong> \${esc(cats)}</p>\` : ''}\${segments ? \`<p><strong>العملاء المستهدفون:</strong> \${esc(segments)}</p>\` : ''}\${props ? \`<p><strong>القيمة/التموضع:</strong> \${esc(props)}</p>\` : ''}\${funnel ? \`<p><strong>مسار البيع المرصود:</strong> \${esc(funnel)}</p>\` : ''}\${prices ? \`<p><strong>عينات أسعار عامة:</strong> \${esc(prices)}</p>\` : ''}<p><strong>مصدر متوسط القيمة:</strong> \${esc(bi.averageTicketSource || 'غير محدد')} · <strong>مصدر حجم الطلب:</strong> \${esc(bi.monthlyLeadSource || 'غير محدد')}</p><p><strong>Marketing stack / التتبع المرصود:</strong><br>\${trackerStackHtml(bi)}</p></div><div class="leak-value">\${money(bi.confidence || 0)}%<small>business-context confidence</small></div></div>\`;
 }
 
 function renderLiveScan(data) {
@@ -51,7 +64,7 @@ function renderLiveScan(data) {
     return `<div class="leak-row"><div><h3>${esc(item.service)}</h3><p>${esc((item.issues || []).join(' · '))}</p></div><div class="leak-value">${showMoney ? `−${money(high)} ريال<small>${money(low)}–${money(high)} ريال / شهر تقديري</small>` : '<span style="color:#d7bd68">Verified finding</span><small>no defensible revenue amount assigned</small>'}</div></div>`;
   }).join('');
   const nonMonetized = (audit.issues || []).filter(i => i.monetizable === false).slice(0,6).map(i=>`<li><strong>${esc(i.title)}</strong> — ${esc(i.detail || '')}</li>`).join('');
-  const unknowns = (audit.unknowns || []).slice(0, 6).map(x => `<li><strong>${esc(x.label || x.signalKey)}</strong> — غير محسوم من الفحص العام؛ لا نعتبره مفقودًا.</li>`).join('');
+  const unknowns = (audit.unknowns || []).filter(x => !/^(hasAnalytics|hasMetaPixel|hasTikTokPixel|hasSnapchatPixel|hasGoogleAds|hasGTM)$/.test(x.signalKey || '')).slice(0, 6).map(x => `<li><strong>${esc(x.label || x.signalKey)}</strong> — غير محسوم من الفحص العام؛ لا نعتبره مفقودًا.</li>`).join('');
   const moneyBox = showMoney
     ? `<div class="leak-box"><div class="label">ESTIMATED MONTHLY OPPORTUNITY</div><div class="amount">${money(monthly.high)} ريال</div><div class="range">نطاق تقديري ${money(monthly.low)} – ${money(monthly.high)} ريال / شهر · ${esc(opportunity.method || '')}</div></div>`
     : `<div class="leak-box"><div class="label">COMMERCIAL OPPORTUNITY STATUS</div><div class="amount" style="font-size:28px;color:#d7bd68">لا يوجد رقم مالي موثوق كفاية بعد</div><div class="range">${esc(opportunity.withheldReason || 'النظام فهم المشروع، لكن لن يربط أي ملاحظة برقم ريال إلا إذا كان تأثيرها التجاري قابلًا للدفاع عنه.')}</div></div>`;
