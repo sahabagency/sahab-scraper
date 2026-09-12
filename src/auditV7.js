@@ -82,6 +82,12 @@ function actionPlan(service, reason, evidenceClass) {
       method: 'اختبار A/B لترتيب عناصر الثقة ومقارنة صفحة قبل/بعد.',
       measurement: 'إضافة للسلة، بدء checkout، ومعدل التحويل لكل صفحة.'
     },
+    'Service & offer merchandising / booking CRO': {
+      problem: 'الكتالوج يحتوي خدمات وباقات كثيرة، لكن ترتيب العروض لا يوجّه الزائر بوضوح من المشكلة العلاجية إلى الباقة ثم الحجز.',
+      solution: 'إنشاء مسارات واضحة لكل خدمة رئيسية: المشكلة/النتيجة، الباقة المناسبة، السعر أو نطاق السعر، الفروع، ثم زر حجز أو تواصل واضح.',
+      method: 'تقسيم الفئات إلى مجموعات علاجية، تثبيت أفضل الباقات أعلى الصفحة، إضافة مقارنة مختصرة وCTA موحّد، ثم اختبار ترتيب البطاقات والرسائل.',
+      measurement: 'CTR من الفئة إلى العرض، بدء الحجز، الضغط على واتساب/الاتصال، ومعدل التحويل لكل فئة.'
+    },
     'Product merchandising & CRO': {
       problem: 'الكتالوج ومسار الشراء موجودان، لكن ترتيب المنتجات والمقارنة والعروض يحتاج اختبارًا منظمًا.',
       solution: 'ترتيب المنتجات حسب الطلب والهامش، إضافة مقارنات وbundles، وتحسين CTA.',
@@ -103,6 +109,7 @@ function actionPlan(service, reason, evidenceClass) {
     'Retention & loyalty activation': { problemEn:'The loyalty program is visible, but activation and repeat purchase need a structured test cycle.', solutionEn:'Improve loyalty onboarding, trigger behavior-based reminders and offers, and connect rewards to repeat purchase.', methodEn:'Segment members by recency, test trigger messages, and compare pre/post cohorts.', measurementEn:'Track activation, repeat purchase rate, revenue per member, and reward redemption.' },
     'B2B / project pipeline expansion': { problemEn:'A project path is visible, but pipeline growth needs a measurable request and follow-up path.', solutionEn:'Create a short RFQ for project type, quantity, and timeline, with a landing page and follow-up sequence.', methodEn:'Add a B2B CTA, instrument the form, set a response SLA, and test acquisition sources.', measurementEn:'Track qualified RFQs, response time, meeting conversion, and proposal value.' },
     'Product conversion & trust': { problemEn:'The sampled product pages do not show enough visible social proof near the buying decision.', solutionEn:'Place reviews, ratings, photos, delivery, and warranty information beside the purchase action.', methodEn:'A/B test the order and visibility of trust elements on product pages.', measurementEn:'Track add-to-cart, checkout starts, and conversion rate per product page.' },
+    'Service & offer merchandising / booking CRO': { problemEn:'The clinic has many services and packages, but the offer order does not clearly move a visitor from treatment need to package and booking.', solutionEn:'Create a clear path for each major service: need/outcome, suitable package, price or range, branches, then one visible booking or contact CTA.', methodEn:'Group categories by treatment intent, pin priority packages at the top, add a short comparison and consistent CTA, then test card order and copy.', measurementEn:'Track category-to-offer CTR, booking starts, WhatsApp/call clicks, and conversion rate by category.' },
     'Product merchandising & CRO': { problemEn:'The catalog and buying path exist, but product ordering, comparison, and offers need structured testing.', solutionEn:'Rank products by demand and margin, add comparisons and bundles, and improve the CTA.', methodEn:'Use internal search data, click maps, and weekly category/product experiments.', measurementEn:'Track product CTR, add-to-cart, average order value, and conversion rate.' },
     'B2B / project lead capture': { problemEn:'A projects/business page is visible, but a dedicated request-for-quote path was not observable in the sample.', solutionEn:'Add a short RFQ form with project type, quantity, timeline, and contact method.', methodEn:'Place a clear CTA on the B2B page, instrument the form, and notify the team immediately.', measurementEn:'Track qualified RFQs, response time, and conversion to a meeting or proposal.' }
   };
@@ -148,14 +155,15 @@ function verifiedRows(audit={},base){
 function modeledRows(audit={},base){
   const bi=audit.businessIntelligence||{},deep=bi.deepAudit||{},f=bi.funnelSignals||{},rows=[];
   const productCount=n(bi.catalog?.productCount||deep.inventory?.productUrlCount||bi.pageInventory?.productLinks||bi.products?.length);
+  const clinic=/clinic|عيادة|medical|aesthetic/i.test(String(bi.industry||''));
   const categoryCount=n(bi.catalog?.categoryCount||deep.inventory?.categoryUrlCount||bi.pageInventory?.categoryLinks||bi.categories?.length);
 
   // Modeled rows are strategic upside supported by this exact site's structure. They are never presented as missing features.
   if(categoryCount>=4){
-    rows.push(row({service:'Search & category demand growth',reason:`تم رصد ${categoryCount} تصنيفات فعلية؛ نحسب مساحة نمو محافظة من توسيع تغطية البحث وصفحات الفئات، بدون افتراض أن الـSEO الحالي ضعيف.`,lowRate:.002,highRate:.010,confidence:64},base));
+    rows.push(row({service:'Search & category demand growth',reason:clinic?`تم رصد ${categoryCount} فئة علاجية فعلية مثل الليزر والفيلر والبوتكس والأسنان؛ الفرصة هنا هي ربط كل نية علاجية بصفحة فئة وعرض وحجز، وليس مجرد زيادة كلمات SEO.`:`تم رصد ${categoryCount} تصنيفات فعلية؛ نحسب مساحة نمو محافظة من توسيع تغطية البحث وصفحات الفئات، بدون افتراض أن الـSEO الحالي ضعيف.`,lowRate:.002,highRate:.010,confidence:64},base));
   }
   if(productCount>=8){
-    rows.push(row({service:'Product merchandising & CRO',reason:`تم رصد كتالوج فعلي (${productCount} منتج تقريبًا) ومسار شراء مباشر؛ هذا headroom لاختبار ترتيب المنتجات والمقارنة والعروض، وليس خللًا مثبتًا.`,lowRate:.0015,highRate:.008,confidence:61},base));
+    rows.push(row({service:clinic?'Service & offer merchandising / booking CRO':'Product merchandising & CRO',reason:clinic?`تم رصد كتالوج خدمات/عروض فعلي (${productCount} عرضًا تقريبًا)؛ المطلوب اختبار ترتيب الباقات داخل فئات العلاج وربطها بالحجز أو التواصل، وليس افتراض أن المنتجات غير مرتبة.`:`تم رصد كتالوج فعلي (${productCount} منتج تقريبًا) ومسار شراء مباشر؛ هذا headroom لاختبار ترتيب المنتجات والمقارنة والعروض، وليس خللًا مثبتًا.`,lowRate:.0015,highRate:.008,confidence:61},base));
   }
   if(f.loyaltyDetected){
     rows.push(row({service:'Retention & loyalty activation',reason:'برنامج الولاء موجود بالفعل؛ نحسب فقط مساحة تحسين محدودة في التفعيل والعودة والشراء المتكرر، ولا نعامل الولاء كميزة مفقودة.',lowRate:.001,highRate:.005,confidence:57},base));
