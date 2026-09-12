@@ -43,7 +43,7 @@
     const suffix = isEnglish() ? (yes ? 'Verified' : unknown ? 'Not publicly observable' : 'Not observed') : (yes ? 'مؤكد من كود الموقع' : unknown ? 'لم يظهر علنًا' : 'غير مرصود');
     const evidence = (tracker?.evidence || []).slice(0,2).join(' · ');
     const reason = yes ? evidence : (isEnglish() ? 'No public marker in sampled pages; not proof of absence.' : 'لم يظهر مؤشر عام في الصفحات المفحوصة؛ لا يعني أنه غير موجود.');
-    return \`<span style="display:inline-block;margin:4px 10px 4px 0;font-size:12px;color:\${color}" title="\${esc(reason)}">\${symbol} \${esc(label)} · \${suffix}\${evidence ? \`<small style="display:block;color:#a89d78;margin-left:15px;max-width:290px;white-space:normal">\${esc(evidence)}</small>\` : ''}</span>\`;
+    return `<span style="display:inline-block;margin:4px 10px 4px 0;font-size:12px;color:${color}" title="${esc(reason)}">${symbol} ${esc(label)} · ${suffix}${evidence ? `<small style="display:block;color:#a89d78;margin-left:15px;max-width:290px;white-space:normal">${esc(evidence)}</small>` : ''}</span>`;
   }
 
   function render(data) {
