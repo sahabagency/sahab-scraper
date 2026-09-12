@@ -22,7 +22,7 @@ function trackerStackHtml(bi = {}) {
     const color = verified ? '#c7e4b5' : '#e0c878';
     const state = verified ? 'مؤكد من كود الموقع' : 'لم يظهر علنًا — لا يعني أنه غير موجود';
     const evidence = (item.evidence || []).slice(0,2).join(' · ');
-    return \`<span style="display:inline-block;margin:3px 8px 3px 0;color:\${color}" title="\${esc(evidence || item.reason || state)}">\${verified?'●':'◐'} \${label} · \${state}\${evidence ? \`<small style="display:block;color:#a89d78;margin-left:14px">\${esc(evidence)}</small>\` : ''}</span>\`;
+    return `<span style="display:inline-block;margin:3px 8px 3px 0;color:${color}" title="${esc(evidence || item.reason || state)}">${verified?'●':'◐'} ${label} · ${state}${evidence ? `<small style="display:block;color:#a89d78;margin-left:14px">${esc(evidence)}</small>` : ''}</span>`;
   }).join('');
 }
 
@@ -51,10 +51,10 @@ function businessIntelBox(bi = {}) {
   const products = (bi.products || []).slice(0, 6).join(' · ');
   const segments = (bi.targetSegments || []).slice(0, 5).join(' · ');
   const props = (bi.valuePropositions || []).slice(0, 5).join(' · ');
-  const prices = (bi.priceSamples || []).slice(0, 8).map(x => \`\${money(x)} ريال\`).join(' · ');
+  const prices = (bi.priceSamples || []).slice(0, 8).map(x => `${money(x)} ريال`).join(' · ');
   const f = bi.funnelSignals || {};
   const funnel = [f.cartDetected?'سلة شراء':null,f.checkoutDetected?'Checkout':null,f.b2bSecondaryDetected||f.b2bDetected?'B2B/مشاريع':null,f.quoteRequestDetected?'طلب عرض سعر':null,f.whatsappDetected?'WhatsApp':null,f.reviewsDetected?'Reviews':null,f.blogDetected?'Content/Blog':null].filter(Boolean).join(' · ');
-  return \`<div class="leak-row"><div><h3>فهم المشروع من الرابط</h3><p><strong>\${esc(bi.brandName || '')}</strong>\${bi.brandName?' · ':''}<strong>\${esc(bi.industry || 'غير محسوم')}</strong> · \${esc(bi.businessModel || '')}\${bi.platform ? \` · منصة \${esc(bi.platform)}\` : ''}\${bi.currency ? \` · العملة \${esc(bi.currency)}\` : ''}</p>\${products ? \`<p><strong>المنتجات:</strong> \${esc(products)}</p>\` : ''}\${cats ? \`<p><strong>الأقسام:</strong> \${esc(cats)}</p>\` : ''}\${segments ? \`<p><strong>العملاء المستهدفون:</strong> \${esc(segments)}</p>\` : ''}\${props ? \`<p><strong>القيمة/التموضع:</strong> \${esc(props)}</p>\` : ''}\${funnel ? \`<p><strong>مسار البيع المرصود:</strong> \${esc(funnel)}</p>\` : ''}\${prices ? \`<p><strong>عينات أسعار عامة:</strong> \${esc(prices)}</p>\` : ''}<p><strong>مصدر متوسط القيمة:</strong> \${esc(bi.averageTicketSource || 'غير محدد')} · <strong>مصدر حجم الطلب:</strong> \${esc(bi.monthlyLeadSource || 'غير محدد')}</p><p><strong>Marketing stack / التتبع المرصود:</strong><br>\${trackerStackHtml(bi)}</p></div><div class="leak-value">\${money(bi.confidence || 0)}%<small>business-context confidence</small></div></div>\`;
+  return `<div class="leak-row"><div><h3>فهم المشروع من الرابط</h3><p><strong>${esc(bi.brandName || '')}</strong>${bi.brandName?' · ':''}<strong>${esc(bi.industry || 'غير محسوم')}</strong> · ${esc(bi.businessModel || '')}${bi.platform ? ` · منصة ${esc(bi.platform)}` : ''}${bi.currency ? ` · العملة ${esc(bi.currency)}` : ''}</p>${products ? `<p><strong>المنتجات:</strong> ${esc(products)}</p>` : ''}${cats ? `<p><strong>الأقسام:</strong> ${esc(cats)}</p>` : ''}${segments ? `<p><strong>العملاء المستهدفون:</strong> ${esc(segments)}</p>` : ''}${props ? `<p><strong>القيمة/التموضع:</strong> ${esc(props)}</p>` : ''}${funnel ? `<p><strong>مسار البيع المرصود:</strong> ${esc(funnel)}</p>` : ''}${prices ? `<p><strong>عينات أسعار عامة:</strong> ${esc(prices)}</p>` : ''}<p><strong>مصدر متوسط القيمة:</strong> ${esc(bi.averageTicketSource || 'غير محدد')} · <strong>مصدر حجم الطلب:</strong> ${esc(bi.monthlyLeadSource || 'غير محدد')}</p><p><strong>Marketing stack / التتبع المرصود:</strong><br>${trackerStackHtml(bi)}</p></div><div class="leak-value">${money(bi.confidence || 0)}%<small>business-context confidence</small></div></div>`;
 }
 
 function renderLiveScan(data) {
