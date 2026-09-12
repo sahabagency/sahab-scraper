@@ -35,12 +35,15 @@
   }
   function englishPlan(service='') { const map={'Search & category demand growth':['The site has real categories, but search coverage across purchase intents is not fully developed.','Expand category and landing pages around search intent, product, and use case.','Build a keyword map, publish intent-specific pages, add internal links, then test impressions and clicks.','Track qualified keywords, organic sessions, and category-page clicks.'],'Product merchandising & CRO':['The catalog and buying path exist, but product ordering, comparison, and offers need structured testing.','Rank products by demand and margin, add comparisons and bundles, and improve the CTA.','Use internal search data, click maps, and weekly category/product experiments.','Track product CTR, add-to-cart, average order value, and conversion rate.'],'Retention & loyalty activation':['The loyalty program is visible, but activation and repeat-purchase behavior need structured testing.','Improve loyalty onboarding, triggers, and repeat-purchase offers.','Segment members, test lifecycle messages, and compare repeat purchase cohorts.','Track activation, repeat purchase rate, and revenue per member.']}; const x=map[service]||['A specific improvement area was identified from public site evidence.','Turn the observation into a page-specific conversion experiment.','Set a baseline, implement one change, and compare before and after.','Track the conversion metric tied directly to the problem.']; return {problem:x[0],solution:x[1],method:x[2],measurement:x[3]}; }
 
-  function tri(label, value) {
-    const yes = value === true, unknown = value == null;
+  function tri(label, tracker) {
+    const state = tracker?.state || 'unknown';
+    const yes = state === 'verified', unknown = state === 'unknown';
     const color = yes ? '#c7e4b5' : unknown ? '#e0c878' : '#d7a0a0';
     const symbol = yes ? '●' : unknown ? '◐' : '○';
-    const suffix = isEnglish() ? (yes ? 'Verified' : unknown ? 'Not confirmed' : 'Not observed') : (yes ? 'مؤكد' : unknown ? 'غير محسوم' : 'غير مرصود');
-    return `<span style="display:inline-block;margin:4px 10px 4px 0;font-size:12px;color:${color}">${symbol} ${esc(label)} · ${suffix}</span>`;
+    const suffix = isEnglish() ? (yes ? 'Verified' : unknown ? 'Not publicly observable' : 'Not observed') : (yes ? 'مؤكد من كود الموقع' : unknown ? 'لم يظهر علنًا' : 'غير مرصود');
+    const evidence = (tracker?.evidence || []).slice(0,2).join(' · ');
+    const reason = yes ? evidence : (isEnglish() ? 'No public marker in sampled pages; not proof of absence.' : 'لم يظهر مؤشر عام في الصفحات المفحوصة؛ لا يعني أنه غير موجود.');
+    return \`<span style="display:inline-block;margin:4px 10px 4px 0;font-size:12px;color:\${color}" title="\${esc(reason)}">\${symbol} \${esc(label)} · \${suffix}\${evidence ? \`<small style="display:block;color:#a89d78;margin-left:15px;max-width:290px;white-space:normal">\${esc(evidence)}</small>\` : ''}</span>\`;
   }
 
   function render(data) {
@@ -71,7 +74,7 @@
       ['Quote request', funnel.quoteRequestDetected || funnel.b2bConversionDetected], ['WhatsApp', funnel.whatsappDetected], ['Reviews', funnel.reviewsDetected], ['Loyalty', funnel.loyaltyDetected], ['Installments', funnel.installmentDetected], ['Delivery', funnel.shippingDetected || funnel.freeDeliveryDetected]
     ].map(([label,yes]) => `<span style="display:inline-block;margin:4px 8px 4px 0;font-size:12px;color:${yes?'#c7e4b5':'#9d9789'}">${yes?'●':'○'} ${esc(label)}</span>`).join('');
 
-    const trackers = funnel.trackers || {}; const trackerState = key => trackers[key]?.state === 'verified' ? true : null; const stackRows = [tri('Google Tag Manager', trackerState('googleTagManager')), tri('Google Analytics', trackerState('googleAnalytics')), tri('Meta Pixel', trackerState('metaPixel')), tri('TikTok Pixel', trackerState('tiktokPixel')), tri('Snapchat Pixel', trackerState('snapchatPixel')), tri('Google Ads tag', trackerState('googleAds'))].join('');
+    const trackers = funnel.trackers || {}; const stackRows = [tri('Google Tag Manager', trackers.googleTagManager), tri('Google Analytics', trackers.googleAnalytics), tri('Meta Pixel', trackers.metaPixel), tri('TikTok Pixel', trackers.tiktokPixel), tri('Snapchat Pixel', trackers.snapchatPixel), tri('Google Ads tag', trackers.googleAds)].join('');
     const email = data.emailHtml && (!isEnglish() || !hasArabic(data.emailHtml)) ? `<details class="outreach-preview" open><summary>${isEnglish()?'Exact English email design that will be sent':'Exact email design that will be sent'}</summary><p><strong>${esc(data.outreach?.subject || '')}</strong></p><iframe title="Email preview" style="width:100%;height:760px;border:1px solid #3a362d;border-radius:16px;background:#fff" sandbox="" srcdoc="${esc(data.emailHtml)}"></iframe><details><summary>Plain-text fallback</summary><pre>${esc(data.outreach?.body || '')}</pre></details></details>` : '';
 
     const baselineHtml = baseline.monthlyCommerceScenarioRange ? `<p><strong>${isEnglish()?'Direct-commerce baseline before improvement:':'سيناريو التجارة المباشرة قبل التحسين:'}</strong> ${ri(baseline.monthlyCommerceScenarioRange.low)}–${ri(baseline.monthlyCommerceScenarioRange.high)} ${isEnglish()?' / month · based on observed median price ':' شهريًا · مبني على وسيط سعر مرصود'} ${ri(baseline.medianObservedTicket)} ${isEnglish()?`and a modeled range of ${money(baseline.modeledOrderRange?.low)}–${money(baseline.modeledOrderRange?.high)} orders/month; this is a scenario, not reported revenue.`:`ونطاق ${money(baseline.modeledOrderRange?.low)}–${money(baseline.modeledOrderRange?.high)} طلب شراء شهريًا كنموذج وليس رقم مبيعات فعلي.`}</p>` : '';
