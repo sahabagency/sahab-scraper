@@ -90,6 +90,7 @@ export function qualifyLead({ lead = {}, audit = {} } = {}) {
   let tier = 'REJECT';
   if (score >= 80 && lead.contactEmail && emailConfidence >= 85 && Number(opportunity.confidence || 0) >= 55 && actionable.length >= 1) tier = 'A';
   else if (score >= 64 && (lead.contactEmail || ['linkedin','instagram','whatsapp'].includes(route.channel)) && actionable.length >= 1) tier = 'B';
+  else if (score >= 30 && (route.destination || lead.phone || lead.website) && audit.auditMode === 'website' && actionable.length >= 1) tier = 'C';
   else if (score >= 42 && (route.destination || lead.phone || lead.website)) tier = 'C';
 
   const sendEligible = tier === 'A' && Boolean(lead.contactEmail);
