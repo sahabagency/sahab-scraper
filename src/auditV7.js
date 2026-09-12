@@ -145,7 +145,7 @@ function verifiedRows(audit={},base){
 
   const b2b=Boolean(f.b2bDetected||f.b2bPageDetected||f.b2bSecondaryDetected||bi.commerce?.b2b);
   const clinic=/clinic|عيادة|medical|aesthetic/i.test(String(bi.industry||''));
-  if(clinic&&!f.bookingDetected){ rows.push(row({service:'Appointment booking funnel',reason:'فحص الصفحة الرئيسية والصفحات العامة لم يُظهر زر حجز موعد أو مسار حجز قابلًا للتتبع؛ الموجود الظاهر هو مسار المتجر/السلة فقط.',lowRate:.003,highRate:.012,confidence:88,evidenceClass:'verified_gap'},base)); }
+  if(clinic&&!f.bookingHomeDetected){ rows.push(row({service:'Appointment booking funnel',reason:'فحص الصفحة الرئيسية لم يُظهر زر حجز موعد أو مسار حجز قابلًا للتتبع؛ المدخل الظاهر يقود إلى فئات الخدمات والمتجر والفروع، لذلك توجد فجوة فعلية في تحويل الزائر من أول زيارة إلى موعد.',lowRate:.003,highRate:.012,confidence:92,evidenceClass:'verified_gap'},base)); }
   if(b2b&&n(deep.b2bSampleCount)>0&&!f.quoteRequestDetected&&!f.b2bConversionDetected){
     rows.push(row({service:'B2B / project lead capture',reason:`مسار المشاريع والشركات ظاهر وتم فحص ${deep.b2bSampleCount} صفحة B2B، لكن لم يظهر RFQ/طلب عرض سعر مخصص في العينة العامة.`,lowRate:.003,highRate:.012,confidence:84,evidenceClass:'verified_gap'},base));
   }
@@ -224,5 +224,4 @@ export async function auditLead(lead,assumptions={}){
   audit=rebuildOpportunity(audit);
   return audit;
 }
-
 
