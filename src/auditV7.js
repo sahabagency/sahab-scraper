@@ -82,6 +82,12 @@ function actionPlan(service, reason, evidenceClass) {
       method: 'اختبار A/B لترتيب عناصر الثقة ومقارنة صفحة قبل/بعد.',
       measurement: 'إضافة للسلة، بدء checkout، ومعدل التحويل لكل صفحة.'
     },
+    'Appointment booking funnel': {
+      problem: 'صفحة العيادة تعرض خدمات وعروضًا، لكن مسار حجز الموعد غير ظاهر في الصفحات العامة المفحوصة.',
+      solution: 'إضافة زر حجز ثابت لكل خدمة وباقة يحدد الفرع والموعد والخدمة، مع بديل واضح عبر واتساب أو الاتصال وتتبع المصدر.',
+      method: 'وضع CTA الحجز في أعلى الصفحة وبطاقات الخدمات وصفحات العروض، ربطه بنموذج أو نظام الحجز، ثم اختبار الحجز من الجوال لكل فرع.',
+      measurement: 'نقرات الحجز، بدء النموذج، اكتمال الحجز، نقرات واتساب/الاتصال، وتكلفة الحجز حسب مصدر الزيارة.'
+    },
     'Service & offer merchandising / booking CRO': {
       problem: 'الكتالوج يحتوي خدمات وباقات كثيرة، لكن ترتيب العروض لا يوجّه الزائر بوضوح من المشكلة العلاجية إلى الباقة ثم الحجز.',
       solution: 'إنشاء مسارات واضحة لكل خدمة رئيسية: المشكلة/النتيجة، الباقة المناسبة، السعر أو نطاق السعر، الفروع، ثم زر حجز أو تواصل واضح.',
@@ -109,6 +115,7 @@ function actionPlan(service, reason, evidenceClass) {
     'Retention & loyalty activation': { problemEn:'The loyalty program is visible, but activation and repeat purchase need a structured test cycle.', solutionEn:'Improve loyalty onboarding, trigger behavior-based reminders and offers, and connect rewards to repeat purchase.', methodEn:'Segment members by recency, test trigger messages, and compare pre/post cohorts.', measurementEn:'Track activation, repeat purchase rate, revenue per member, and reward redemption.' },
     'B2B / project pipeline expansion': { problemEn:'A project path is visible, but pipeline growth needs a measurable request and follow-up path.', solutionEn:'Create a short RFQ for project type, quantity, and timeline, with a landing page and follow-up sequence.', methodEn:'Add a B2B CTA, instrument the form, set a response SLA, and test acquisition sources.', measurementEn:'Track qualified RFQs, response time, meeting conversion, and proposal value.' },
     'Product conversion & trust': { problemEn:'The sampled product pages do not show enough visible social proof near the buying decision.', solutionEn:'Place reviews, ratings, photos, delivery, and warranty information beside the purchase action.', methodEn:'A/B test the order and visibility of trust elements on product pages.', measurementEn:'Track add-to-cart, checkout starts, and conversion rate per product page.' },
+    'Appointment booking funnel': { problemEn:'The clinic presents services and offers, but an appointment-booking path was not visible in the sampled public pages.', solutionEn:'Add a persistent booking CTA for each service and package with branch, time, and service selection, plus a clear WhatsApp/call fallback and source tracking.', methodEn:'Place the booking CTA above the fold, on service cards and offer pages, connect it to a booking form/system, and test the mobile flow for every branch.', measurementEn:'Track booking clicks, form starts, completed bookings, WhatsApp/call clicks, and booking cost by traffic source.' },
     'Service & offer merchandising / booking CRO': { problemEn:'The clinic has many services and packages, but the offer order does not clearly move a visitor from treatment need to package and booking.', solutionEn:'Create a clear path for each major service: need/outcome, suitable package, price or range, branches, then one visible booking or contact CTA.', methodEn:'Group categories by treatment intent, pin priority packages at the top, add a short comparison and consistent CTA, then test card order and copy.', measurementEn:'Track category-to-offer CTR, booking starts, WhatsApp/call clicks, and conversion rate by category.' },
     'Product merchandising & CRO': { problemEn:'The catalog and buying path exist, but product ordering, comparison, and offers need structured testing.', solutionEn:'Rank products by demand and margin, add comparisons and bundles, and improve the CTA.', methodEn:'Use internal search data, click maps, and weekly category/product experiments.', measurementEn:'Track product CTR, add-to-cart, average order value, and conversion rate.' },
     'B2B / project lead capture': { problemEn:'A projects/business page is visible, but a dedicated request-for-quote path was not observable in the sample.', solutionEn:'Add a short RFQ form with project type, quantity, timeline, and contact method.', methodEn:'Place a clear CTA on the B2B page, instrument the form, and notify the team immediately.', measurementEn:'Track qualified RFQs, response time, and conversion to a meeting or proposal.' }
@@ -137,6 +144,8 @@ function verifiedRows(audit={},base){
   }
 
   const b2b=Boolean(f.b2bDetected||f.b2bPageDetected||f.b2bSecondaryDetected||bi.commerce?.b2b);
+  const clinic=/clinic|عيادة|medical|aesthetic/i.test(String(bi.industry||''));
+  if(clinic&&!f.bookingDetected){ rows.push(row({service:'Appointment booking funnel',reason:'فحص الصفحة الرئيسية والصفحات العامة لم يُظهر زر حجز موعد أو مسار حجز قابلًا للتتبع؛ الموجود الظاهر هو مسار المتجر/السلة فقط.',lowRate:.003,highRate:.012,confidence:88,evidenceClass:'verified_gap'},base)); }
   if(b2b&&n(deep.b2bSampleCount)>0&&!f.quoteRequestDetected&&!f.b2bConversionDetected){
     rows.push(row({service:'B2B / project lead capture',reason:`مسار المشاريع والشركات ظاهر وتم فحص ${deep.b2bSampleCount} صفحة B2B، لكن لم يظهر RFQ/طلب عرض سعر مخصص في العينة العامة.`,lowRate:.003,highRate:.012,confidence:84,evidenceClass:'verified_gap'},base));
   }
