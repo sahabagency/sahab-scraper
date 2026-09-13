@@ -38,3 +38,6 @@ Open `http://localhost:3000`.
 ## Next production steps
 
 The current branch is the working v1 foundation. Before full autonomous sending, add persistent Postgres storage, Gmail OAuth/send queue, contact-email enrichment, suppression/unsubscribe controls, daily limits, bounce tracking, reply detection, and an approval policy for first-touch campaigns.
+
+
+<!-- production deploy trigger 2026-09-13 -->
