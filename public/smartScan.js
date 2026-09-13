@@ -76,7 +76,7 @@
 
     const trackers = funnel.trackers || {};
     const funnelRows = [
-      [isEnglish()?'Cart / checkout':'السلة / إتمام الطلب', funnel.cartDetected || funnel.checkoutDetected], [isEnglish()?'B2B / projects':'المشاريع والشركات', funnel.b2bPageDetected || funnel.b2bSecondaryDetected || funnel.b2bDetected],
+      [isEnglish()?'Cart / checkout':'السلة / إتمام الطلب', funnel.cartDetected || funnel.checkoutDetected || Boolean(trackers.servicePurchaseDetected)], [isEnglish()?'B2B / projects':'المشاريع والشركات', funnel.b2bPageDetected || funnel.b2bSecondaryDetected || funnel.b2bDetected],
       [isEnglish()?'Quote request':'طلب عرض سعر', funnel.quoteRequestDetected || funnel.b2bConversionDetected], [isEnglish()?'WhatsApp':'واتساب', funnel.whatsappDetected], [isEnglish()?'Reviews':'التقييمات', funnel.reviewsDetected], [isEnglish()?'Loyalty':'الولاء', funnel.loyaltyDetected], [isEnglish()?'Installments':'التقسيط', funnel.installmentDetected], [isEnglish()?'Delivery':'التوصيل', funnel.shippingDetected || funnel.freeDeliveryDetected],
       [isEnglish()?'Service purchase':'شراء الخدمة', Boolean(trackers.servicePurchaseDetected)], [isEnglish()?'Branch selection':'اختيار الفرع', Boolean(trackers.branchSelectionDetected)], [isEnglish()?'Online payment':'الدفع الإلكتروني', Boolean(trackers.paymentMethodsDetected)]
     ].map(([label,yes]) => `<span style="display:inline-block;margin:4px 8px 4px 0;font-size:12px;color:${yes?'#c7e4b5':'#9d9789'}">${yes?'●':'○'} ${esc(label)}</span>`).join('');
