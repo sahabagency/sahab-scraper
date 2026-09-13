@@ -75,7 +75,8 @@ function buildDossier(audit={}){
   audit.businessDossier={
     brandName:bi.brandName||null,
     industry,
-    businessType:bi.businessModel||null,
+    businessType:bi.siteMode||bi.businessModel||null,
+    siteMode:bi.siteMode||null,
     primaryRevenueMotion:bi.primaryRevenueMotion||null,
     secondaryRevenueMotions:bi.secondaryRevenueMotions||[],
     platform:bi.platform||null,
@@ -89,6 +90,7 @@ function buildDossier(audit={}){
     allObservedPricing:bi.priceStats||null,
     funnel:{cart:f.cartDetected,checkout:f.checkoutDetected,b2b:f.b2bSecondaryDetected||f.b2bDetected,b2bPage:f.b2bPageDetected,quoteRequest:f.quoteRequestDetected,whatsapp:f.whatsappDetected,reviews:f.reviewsDetected,content:f.blogDetected,loyalty:f.loyaltyDetected,installments:f.installmentDetected,freeDelivery:f.freeDeliveryDetected},
     trackerStates,
+    googleBusinessProfile:bi.googleBusinessProfile||null,
     confidence:bi.confidence||null,
     note:'This dossier is inferred from the URL and sampled public pages. Verified facts and modeled commercial assumptions remain separate.'
   };
@@ -102,4 +104,3 @@ export async function auditLead(lead,assumptions={}){
   audit=buildDossier(audit);
   return audit;
 }
-
