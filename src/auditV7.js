@@ -8,12 +8,13 @@ function normalizedModel(audit={}){
   const bi=audit.businessIntelligence||{};
   const f=bi.funnelSignals||{};
   const platform=String(bi.platform?.name||bi.platform||'').toLowerCase();
-  const ecommerce=Boolean(bi.commerce?.ecommerce||f.cartDetected||f.checkoutDetected||/salla|shopify|woocommerce/.test(platform)||/ecommerce/.test(String(bi.businessModel||'').toLowerCase()));
+  const serviceCommerce=bi.siteMode==='service_commerce';
+  const ecommerce=Boolean(bi.commerce?.ecommerce||f.cartDetected||f.checkoutDetected||serviceCommerce||/salla|shopify|woocommerce/.test(platform)||/ecommerce/.test(String(bi.businessModel||'').toLowerCase()));
   const b2b=Boolean(bi.commerce?.b2b||f.b2bDetected||f.b2bPageDetected||f.b2bSecondaryDetected||/b2b|project/.test(String(bi.businessModel||'').toLowerCase()));
   if(ecommerce){
-    bi.primaryRevenueMotion='Direct ecommerce';
+    bi.primaryRevenueMotion=serviceCommerce?'service purchase online':'Direct ecommerce';
     bi.secondaryRevenueMotions=b2b?['B2B / project sales']:[];
-    bi.businessModel=b2b?'Direct ecommerce (primary) + B2B/project sales (secondary)':'Direct ecommerce';
+    bi.businessModel=serviceCommerce?'service commerce':(b2b?'Direct ecommerce (primary) + B2B/project sales (secondary)':'Direct ecommerce');
     bi.commerce={...(bi.commerce||{}),ecommerce:true,b2b,businessModel:bi.businessModel};
   }
   audit.businessIntelligence=bi;
@@ -152,8 +153,22 @@ function verifiedRows(audit={},base){
 
   const b2b=Boolean(f.b2bDetected||f.b2bPageDetected||f.b2bSecondaryDetected||bi.commerce?.b2b);
   const clinic=/clinic|عيادة|medical|aesthetic/i.test(String(bi.industry||''));
-  const servicePurchaseDetected=Boolean(f.trackers?.servicePurchaseDetected);
-  if(clinic&&servicePurchaseDetected&&!f.trackers?.postPurchaseSchedulingDetected){ rows.push(row({service:'Service purchase to appointment handoff',reason:'صفحات الخدمة تُظهر شراء الباقة واختيار الفرع، لكن تعليمات تحديد الموعد بعد الدفع أو زمن التواصل التالي غير ظاهرة في العينة العامة. هذه ليست فجوة حجز إلكتروني؛ إنها فجوة وضوح في handoff ما بعد الشراء.',lowRate:.002,highRate:.008,confidence:88,evidenceClass:'verified_gap'},base)); }
+  const gp=bi.googleBusinessProfile||{};
+  const reviewTheme=gp.themes?.find(x=>x.priority==='high'||x.priority==='medium');
+  if(reviewTheme){
+    const r=row({service:'Google review experience & local conversion',reason:`Google Maps data shows a recurring public theme: ${reviewTheme.labelAr} (${reviewTheme.negativeCount} negative mention(s)); evidence: ${reviewTheme.evidence.join(' | ')}`,lowRate:.001,highRate:.006,confidence:82,evidenceClass:'verified_gap'},base);
+    r.problem=`تكررت في مراجعات Google مشكلة مرتبطة بـ${reviewTheme.labelAr} (${reviewTheme.negativeCount} مراجعة سلبية ضمن العينة).`;
+    r.solution=`معالجة سبب الشكوى تشغيليًا، ثم الرد على كل مراجعة خلال 48 ساعة برسالة محددة، وإضافة توضيح الخدمة/الموعد/السعر في صفحة النشاط.`;
+    r.method=`تصنيف المراجعات أسبوعيًا، تعيين مالك لكل شكوى، تحديث صفحة Google والموقع بما يزيل الالتباس، ثم طلب تقييم من العملاء بعد إتمام الخدمة.`;
+    r.measurement='متوسط التقييم، عدد المراجعات الجديدة، زمن الرد، نسبة الشكاوى المتكررة، والنقرات على الاتصال/الاتجاهات/الموقع.';
+    r.problemEn=`Google Maps shows a recurring public theme: ${reviewTheme.labelEn} (${reviewTheme.negativeCount} negative mention(s)).`;
+    r.solutionEn='Fix the operational cause, reply to every review within 48 hours with a specific resolution, and clarify the service, appointment, or price on the Business Profile and site.';
+    r.methodEn='Tag reviews weekly, assign an owner to each complaint, update the profile/site to remove ambiguity, then request reviews after service completion.';
+    r.measurementEn='Track rating, new reviews, response time, repeated complaint rate, and calls/directions/site clicks.';
+    rows.push(r);
+  }
+  const servicePurchaseDetected=Boolean(f.trackers?.servicePurchaseDetected), serviceCommerce=bi.siteMode==='service_commerce';
+  if((clinic||serviceCommerce)&&servicePurchaseDetected&&!f.trackers?.postPurchaseSchedulingDetected){ rows.push(row({service:'Service purchase to appointment handoff',reason:'صفحات الخدمة تُظهر شراء الباقة/الخدمة، لكن تعليمات تحديد الموعد بعد الدفع أو زمن التواصل التالي غير ظاهرة في العينة العامة. هذه ليست فجوة حجز إلكتروني؛ إنها فجوة وضوح في handoff ما بعد الشراء.',lowRate:.002,highRate:.008,confidence:88,evidenceClass:'verified_gap'},base)); }
   else if(clinic&&!f.bookingHomeDetected&&!f.bookingDetected){ rows.push(row({service:'Appointment booking funnel',reason:'فحص الصفحات العامة لم يُظهر شراء خدمة أو زر حجز موعد أو مسار حجز قابلًا للتتبع؛ لا نفترض وجود حجز غير ظاهر.',lowRate:.003,highRate:.012,confidence:92,evidenceClass:'verified_gap'},base)); }
   if(b2b&&n(deep.b2bSampleCount)>0&&!f.quoteRequestDetected&&!f.b2bConversionDetected){
     rows.push(row({service:'B2B / project lead capture',reason:`مسار المشاريع والشركات ظاهر وتم فحص ${deep.b2bSampleCount} صفحة B2B، لكن لم يظهر RFQ/طلب عرض سعر مخصص في العينة العامة.`,lowRate:.003,highRate:.012,confidence:84,evidenceClass:'verified_gap'},base));
