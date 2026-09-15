@@ -102,7 +102,7 @@ app.post('/api/leads/audit', async (req, res) => {
     const inputLead = req.body?.lead; if (!inputLead?.website && !inputLead?.name) return res.status(400).json({ error: 'lead.name or lead.website is required' });
     const language = req.body?.language === 'en' ? 'en' : 'ar';
     const location = req.body?.location || ''; const requestedIndustry = req.body?.industry || '';
-    let lead = await enrichLeadContact(inputLead, { location });
+    let lead = { ...(await enrichLeadContact(inputLead, { location })), requestedWebsite: inputLead.website || null };
     const audit = await auditLead(lead, { ...(req.body?.assumptions || {}), industry: requestedIndustry });
     if (audit.businessIntelligence?.brandName) lead = { ...lead, name: audit.businessIntelligence.brandName };
     const resolvedIndustry = requestedIndustry || audit.businessIntelligence?.industry || '';
