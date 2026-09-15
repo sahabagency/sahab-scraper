@@ -18,8 +18,7 @@ function inspectPage(html,url,type='other'){
 function uniq(a){return[...new Set(a.filter(Boolean))]};function locationHasQuery(u){try{return Boolean(new URL(u).search)}catch{return false}}
 function imageStats(a){return{count:a.length,missingAlt:a.filter(x=>!x.alt).length,withDimensions:a.filter(x=>x.width&&x.height).length,lazy:a.filter(x=>x.loading==='lazy').length,nonModern:a.filter(x=>/\.(jpg|jpeg|png|gif)(\?|$)/i.test(x.src||'')).length};}
 function assetStats(a){return{count:a.length,unminified:a.filter(x=>/\.js(?:\?|$)|\.css(?:\?|$)/i.test(x)&&!/[.-](min|prod)\./i.test(x)).length,renderBlocking:a.length};}
-export async function buildTechnicalAudit({url,html='',bi={}}={}){
-  const requestedUrl=url;
+export async function buildTechnicalAudit({url,requestedUrl=url,html='',bi={}}={}){
   const root=inspectPage(html,url,'home');
   const origin=new URL(url).origin;
   const [robots,sitemap,mobile,desktop]=await Promise.all([get(`${origin}/robots.txt`,7000),get(`${origin}/sitemap.xml`,7000),pagespeed(url,'mobile'),pagespeed(url,'desktop')]);
