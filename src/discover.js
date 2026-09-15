@@ -10,14 +10,17 @@ function normalizePlace(place) {
     types: place.types || [],
     website: null,
     phone: null,
-    source: 'google_places'
+    source: 'google_places',
+    googleMapsUrl: place.url || null,
+    businessStatus: place.business_status || null,
+    openingHours: place.opening_hours || null
   };
 }
 
 async function fetchPlaceDetails(placeId, key) {
   const params = new URLSearchParams({
     place_id: placeId,
-    fields: 'name,website,formatted_phone_number,url,business_status',
+    fields: 'name,website,formatted_phone_number,url,business_status,opening_hours,types,reviews,user_ratings_total',
     key
   });
   const response = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params}`);
@@ -58,8 +61,13 @@ export async function discoverLeads({ industry, location, limit = 20 }) {
         ...base,
         website: details.website || null,
         phone: details.formatted_phone_number || null,
-        googleMapsUrl: details.url || null,
-        businessStatus: details.business_status || null
+        googleMapsUrl: details.url || base.googleMapsUrl || null,
+        businessStatus: details.business_status || base.businessStatus || null,
+        googleRating: details.rating ?? base.rating ?? null,
+        googleReviewCount: details.user_ratings_total ?? base.reviewCount ?? 0,
+        googleTypes: details.types || base.types || [],
+        googleOpeningHours: details.opening_hours || base.openingHours || null,
+        googleReviews: (details.reviews || []).slice(0,5).map(review => ({ rating: review.rating, text: review.text, relativeTimeDescription: review.relative_time_description, time: review.time, authorName: review.author_name }))
       });
     }
 

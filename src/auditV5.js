@@ -46,7 +46,7 @@ function evidenceBasedHeadroom(audit,deep){
 export async function auditLead(lead,assumptions={}){
   const audit=await auditLeadV4(lead,assumptions);if(!audit.website)return audit;
   let deep=null;try{deep=await deepAuditSite({url:audit.website,bi:audit.businessIntelligence||{}});}catch{} if(!deep)return audit;
-  const bi=audit.businessIntelligence||{};bi.deepAudit=deep;bi.catalog={productCount:deep.inventory?.productUrlCount||null,categoryCount:deep.inventory?.categoryUrlCount||null,b2bPageCount:deep.inventory?.b2bUrlCount||null,blogPageCount:deep.inventory?.blogUrlCount||null,countSource:deep.inventory?.countSource||'sampled_pages'};audit.businessIntelligence=bi;
+  const bi=audit.businessIntelligence||{};bi.deepAudit=deep;bi.catalog={productCount:deep.inventory?.productUrlCount||null,categoryCount:deep.inventory?.categoryUrlCount||null,b2bPageCount:deep.inventory?.b2bUrlCount||null,blogPageCount:deep.inventory?.blogUrlCount||null,countSource:deep.inventory?.countSource||'sampled_pages'};bi.technicalAudit={...(bi.technicalAudit||{}),keyPages:deep.pages||[],inventory:deep.inventory||null,categorySeo:deep.categorySeo||null,productQuality:deep.productQuality||null,sitemap:deep.sitemap||null};audit.businessIntelligence=bi;
 
   const verified=verifiedRows(audit,deep),modeled=evidenceBasedHeadroom(audit,deep);let rows=verified.length?[...verified,...modeled.slice(0,1)]:modeled;
   rows=rows.filter(x=>Number(x.monthlyRange?.high||0)>0).slice(0,5);

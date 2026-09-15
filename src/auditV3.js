@@ -35,7 +35,8 @@ async function bravePositiveCorroboration(lead, website){
 }
 
 function profileIntelFromBi(bi={}){
-  return {confidence:bi.confidence,industry:bi.industry,businessType:bi.businessModel,commerce:{ecommerce:String(bi.businessModel||'').includes('ecommerce'),b2b:String(bi.businessModel||'').toLowerCase().includes('b2b'),businessModel:bi.businessModel},platform:bi.platform?{name:bi.platform==='salla'?'Salla':bi.platform==='shopify'?'Shopify':bi.platform==='woocommerce'?'WooCommerce':bi.platform,confidence:95}:null,currency:{currency:bi.currency||'SAR',confidence:bi.currency&&bi.currency!=='unknown'?90:40},priceStats:bi.priceStats?{...bi.priceStats,samples:bi.priceStats.samples||bi.priceSamples||[]}:null,pagesScanned:bi.sampledPages||[]};
+  const serviceCommerce=bi.siteMode==='service_commerce',ecommerce=serviceCommerce||String(bi.businessModel||'').toLowerCase().includes('ecommerce');
+  return {confidence:bi.confidence,industry:bi.industry,businessType:bi.siteMode||bi.businessModel,commerce:{ecommerce,b2b:String(bi.businessModel||'').toLowerCase().includes('b2b'),businessModel:bi.businessModel},platform:bi.platform?{name:bi.platform==='salla'?'Salla':bi.platform==='shopify'?'Shopify':bi.platform==='woocommerce'?'WooCommerce':bi.platform,confidence:95}:null,currency:{currency:bi.currency||'SAR',confidence:bi.currency&&bi.currency!=='unknown'?90:40},priceStats:bi.priceStats?{...bi.priceStats,samples:bi.priceStats.samples||bi.priceSamples||[]}:null,pagesScanned:bi.sampledPages||[]};
 }
 
 function buildProfile(lead, assumptions, bi){
@@ -44,7 +45,7 @@ function buildProfile(lead, assumptions, bi){
 }
 
 function verifiedBusinessIssues(bi={}, bodyText=''){
-  const out=[];const f=bi.funnelSignals||{};const ecommerce=String(bi.businessModel||'').includes('ecommerce');
+  const out=[];const f=bi.funnelSignals||{};const ecommerce=bi.siteMode==='ecommerce_store'||bi.siteMode==='service_commerce'||String(bi.businessModel||'').includes('ecommerce');
   if(ecommerce&&(f.b2bDetected||f.b2bSecondaryDetected)&&f.b2bPageDetected&&!f.quoteRequestDetected&&!f.b2bConversionDetected){
     out.push({severity:'medium',weight:10,service:'B2B Conversion',monetizable:true,title:'Project/B2B demand is visible, but a dedicated quote-request path was not verified',detail:'A separate RFQ/quote path was not verified on the sampled public B2B pages.'});
   }
