@@ -60,10 +60,10 @@ function actionPlan(service, reason, evidenceClass) {
       measurement: 'عدد الكلمات المؤهلة، الزيارات العضوية، ونقرات صفحات الفئات.'
     },
     'Search & category demand growth': {
-      problem: 'تم رصد فئات فعلية، لكن تغطية نوايا الشراء في البحث ليست مستغلة بالكامل.',
-      solution: 'بناء خريطة كلمات حسب الفئة والاستخدام، إنشاء صفحات فئات مخصصة، وربطها بالمنتجات والبحث الداخلي.',
-      method: 'تجميع الكلمات من Search Console والبحث الداخلي، إنشاء صفحة لكل نية، ثم متابعة الظهور والنقرات قبل وبعد.',
-      measurement: 'الكلمات المؤهلة، الزيارات العضوية، CTR، ونقرات صفحات الفئات إلى المنتجات.'
+      problem: 'الفئات وصفحات المقالات موجودة؛ الفرصة هي تحسين ربطها بنوايا البحث والشراء، وليست إنشاء خطة كلمات من الصفر.',
+      solution: 'مراجعة خريطة الكلمات الحالية، تقوية الربط بين المقالات وصفحات الفئات والمنتجات، وإضافة CTA من المقالة إلى العرض المناسب.',
+      method: 'مطابقة كل مقال وفئة مع نية واضحة، فحص Search Console والبحث الداخلي، ثم اختبار العنوان والروابط وCTA على الصفحات ذات الظهور العالي والنقر المنخفض.',
+      measurement: 'CTR العضوي، الكلمات المؤهلة، نقرات المقالات إلى الفئات، ونقرات الفئات إلى المنتجات أو الحجز.'
     },
     'Retention & loyalty activation': {
       problem: 'برنامج الولاء ظاهر، لكن التفعيل والشراء المتكرر يحتاجان دورة اختبار واضحة.',
@@ -102,10 +102,10 @@ function actionPlan(service, reason, evidenceClass) {
       measurement: 'CTR من الفئة إلى العرض، بدء الحجز، الضغط على واتساب/الاتصال، ومعدل التحويل لكل فئة.'
     },
     'Product merchandising & CRO': {
-      problem: 'الكتالوج ومسار الشراء موجودان، لكن ترتيب المنتجات والمقارنة والعروض يحتاج اختبارًا منظمًا.',
-      solution: 'ترتيب المنتجات حسب الطلب والهامش، إضافة مقارنات وbundles، وتحسين CTA.',
-      method: 'تحليل البحث الداخلي، خرائط النقر، وتجارب أسبوعية على الفئات والمنتجات.',
-      measurement: 'CTR للمنتجات، add-to-cart، متوسط قيمة السلة، ومعدل التحويل.'
+      problem: 'الكتالوج ومسار الشراء موجودان؛ نقطة التحسين هي ترتيب العرض وتقليل تردد العميل قبل الإضافة للسلة.',
+      solution: 'إظهار المنتجات أو الباقات الأعلى طلبًا، إضافة مقارنة ومراجعات وشحن/ضمان قرب السعر، ووضع CTA مباشر لكل منتج.',
+      method: 'استخدام البحث الداخلي وبيانات النقر لتحديد المنتجات ذات الزيارات بلا إضافة للسلة، ثم اختبار ترتيب البطاقات والصور والعروض على الجوال.',
+      measurement: 'CTR من الفئة للمنتج، add-to-cart، begin_checkout، متوسط قيمة السلة، ومعدل التحويل حسب المنتج.'
     },
     'B2B / project lead capture': {
       problem: 'صفحة المشاريع/الشركات موجودة، لكن طلب عرض سعر مخصص غير ظاهر في العينة.',
@@ -133,7 +133,7 @@ function actionPlan(service, reason, evidenceClass) {
 function row({service,reason,lowRate,highRate,confidence,evidenceClass='modeled_opportunity'},base){
   const low=roundNice(base.low*lowRate),high=Math.max(low,roundNice(base.high*highRate));
   const plan=actionPlan(service, reason, evidenceClass);
-  return {service,issues:[reason],...plan,modeled:evidenceClass!=='verified_gap',evidenceClass,confidence,monthlyRange:{low,high},annualRange:{low:low*12,high:high*12}};
+  return {service,issues:[reason],...plan,problem:reason,modeled:evidenceClass!=='verified_gap',evidenceClass,confidence,monthlyRange:{low,high},annualRange:{low:low*12,high:high*12}};
 }
 
 function verifiedRows(audit={},base){
