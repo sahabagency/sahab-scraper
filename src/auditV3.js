@@ -1,6 +1,7 @@
 import * as cheerio from 'cheerio';
 import { buildCommercialProfile } from './commercialProfile.js';
 import { inferBusinessIntelligence } from './businessIntelligence.js';
+import { buildTechnicalAudit } from './technicalAudit.js';
 
 const CORE_SIGNALS = [
   { key:'hasTitle', label:'SEO title', weight:8, service:'SEO & Search Visibility' },
@@ -96,7 +97,9 @@ export async function auditLead(lead,assumptions={}){
   let response,html='';try{response=await fetch(lead.website,{redirect:'follow',headers:{'user-agent':'Mozilla/5.0 (compatible; SahabAudit/3.0; +https://sahab.agency)'},signal:AbortSignal.timeout(12000)});html=await response.text();}catch(error){
     const bi={industry:assumptions.industry||'unknown',confidence:35,currency:'SAR',businessModel:'unknown'};const profile=buildProfile(lead,assumptions,bi);result.commercialProfile=profile;result.businessIntelligence=bi;result.issues.push({severity:'high',weight:12,service:'Website Trust & Technical',monetizable:true,title:'Website could not be loaded',detail:error.message});result.opportunity=buildOpportunity({issues:result.issues,profile,bi,unreachable:true});result.opportunityBreakdown=breakdown(result.issues,result.opportunity);return result;
   }
-  const bi=await inferBusinessIntelligence({html,url:response.url||lead.website,lead,assumptions});const profile=buildProfile(lead,assumptions,bi);result.businessIntelligence=bi;result.commercialProfile=profile;
+  const bi=await inferBusinessIntelligence({html,url:response.url||lead.website,lead,assumptions});
+  try{bi.technicalAudit=await buildTechnicalAudit({url:response.url||lead.website,html,bi});}catch(error){bi.technicalAudit={state:'unavailable',reason:error.message};}
+  const profile=buildProfile(lead,assumptions,bi);result.businessIntelligence=bi;result.commercialProfile=profile;
   const $=cheerio.load(html),bodyText=$('body').text().replace(/\s+/g,' ').trim(),hrefs=$('a[href]').map((_,a)=>$(a).attr('href')||'').get().join(' '),scripts=$('script').map((_,s)=>$(s).html()||$(s).attr('src')||'').get().join(' '),interactive=$('a,button,input[type="submit"],[role="button"]').map((_,el)=>`${$(el).text()} ${$(el).attr('aria-label')||''} ${$(el).attr('value')||''} ${$(el).attr('href')||''}`).get().join(' '),technical=`${html} ${scripts}`;
   const ecommerce=String(bi.businessModel||'').includes('ecommerce'),hasGtm=containsAny(technical,['googletagmanager.com','gtm.js','gtag(']);
   const checks={loads:response.ok,usesHttps:String(response.url||lead.website).startsWith('https://'),hasTitle:Boolean($('title').text().trim()),hasMetaDescription:Boolean($('meta[name="description"]').attr('content')?.trim()),hasViewport:Boolean($('meta[name="viewport"]').attr('content')),hasPrimaryCta:containsAny(`${bodyText} ${interactive}`,ecommerce?['أضف للسلة','أضف إلى السلة','شراء','تسوق','متابعة التسوق','اطلب','add to cart','buy now','shop now']:['book now','book appointment','schedule','get quote','contact us','احجز','موعد','تواصل','اطلب موعد']),hasConversionPath:containsAny(`${hrefs} ${bodyText} ${interactive}`,ecommerce?['checkout','cart','سلة المشتريات','متابعة التسوق','شراء','add to cart','أضف إلى السلة','أضف للسلة']:['calendly','book','booking','appointment','schedule','احجز','موعد','اطلب موعد']),hasContact:containsAny(`${hrefs} ${bodyText} ${interactive}`,['tel:','wa.me','whatsapp','واتساب','+966','+1 '])||Boolean(lead.socials?.whatsapp)};
