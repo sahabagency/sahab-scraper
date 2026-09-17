@@ -130,10 +130,10 @@ function actionPlan(service, reason, evidenceClass) {
   };
   return {...(plans[service] || { problem: reason, solution: 'Turn the observation into a page-specific conversion experiment.', method: 'Set a baseline, implement one change, and compare before and after.', measurement: 'Track the conversion metric tied directly to the problem.' }), ...(en[service] || { problemEn: reason, solutionEn: 'Turn the observation into a page-specific conversion experiment.', methodEn: 'Set a baseline, implement one change, and compare before and after.', measurementEn: 'Track the conversion metric tied directly to the problem.' })};
 }
-function row({service,reason,lowRate,highRate,confidence,evidenceClass='modeled_opportunity'},base){
+function row({service,reason,evidence,lowRate,highRate,confidence,evidenceClass='modeled_opportunity'},base){
   const low=roundNice(base.low*lowRate),high=Math.max(low,roundNice(base.high*highRate));
   const plan=actionPlan(service, reason, evidenceClass);
-  return {service,issues:[reason],...plan,problem:reason,modeled:evidenceClass!=='verified_gap',evidenceClass,confidence,monthlyRange:{low,high},annualRange:{low:low*12,high:high*12}};
+  return {service,issues:[reason],evidence:[evidence||reason],...plan,problem:reason,modeled:evidenceClass!=='verified_gap',evidenceClass,confidence,monthlyRange:{low,high},annualRange:{low:low*12,high:high*12}};
 }
 
 function verifiedRows(audit={},base){
@@ -193,7 +193,7 @@ function modeledRows(audit={},base){
 
   // Modeled rows are strategic upside supported by this exact site's structure. They are never presented as missing features.
   if(categoryCount>=4){
-    rows.push(row({service:'Search & category demand growth',reason:clinic?`تم رصد ${categoryCount} فئة علاجية فعلية مثل الليزر والفيلر والبوتكس والأسنان؛ الفرصة هنا هي ربط كل نية علاجية بصفحة فئة وعرض وحجز، وليس مجرد زيادة كلمات SEO.`:`تم رصد ${categoryCount} تصنيفات فعلية؛ نحسب مساحة نمو محافظة من توسيع تغطية البحث وصفحات الفئات، بدون افتراض أن الـSEO الحالي ضعيف.`,lowRate:.002,highRate:.010,confidence:64},base));
+    rows.push(row({service:'Search & category demand growth',reason:clinic?`تم رصد ${categoryCount} فئة علاجية فعلية؛ الفرصة هي التأكد من أن كل نية علاجية تقود إلى صفحة الخدمة والعرض والحجز المناسب.`:`تم رصد ${categoryCount} تصنيفات فعلية؛ الفرصة هي تقوية الربط بين خطة الكلمات والمقالات وصفحات التصنيفات والمنتجات، وليس إنشاء خطة SEO من الصفر.`,evidence:clinic?`التصنيفات العلاجية ظاهرة في الموقع، لكن الفحص العام لا يقيس ترتيب الكلمات أو نسبة الحجز من كل فئة.`:`التصنيفات والمحتوى موجودان في الموقع؛ الفحص العام يثبت وجودهما، لكنه لا يثبت أداء الكلمات أو المبيعات الناتجة من البحث.`,lowRate:.002,highRate:.010,confidence:64},base));
   }
   if(productCount>=8){
     rows.push(row({service:clinic?'Service & offer merchandising / booking CRO':'Product merchandising & CRO',reason:clinic?`تم رصد كتالوج خدمات/عروض فعلي (${productCount} عرضًا تقريبًا)؛ المطلوب اختبار ترتيب الباقات داخل فئات العلاج وربطها بالحجز أو التواصل، وليس افتراض أن المنتجات غير مرتبة.`:`تم رصد كتالوج فعلي (${productCount} منتج تقريبًا) ومسار شراء مباشر؛ هذا headroom لاختبار ترتيب المنتجات والمقارنة والعروض، وليس خللًا مثبتًا.`,lowRate:.0015,highRate:.008,confidence:61},base));
