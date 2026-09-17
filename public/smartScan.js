@@ -21,7 +21,7 @@
   const serviceLabel = value => isEnglish() ? serviceEn(value) : serviceAr(value);
   const arIndustry = value => ({'aesthetic clinic':'عيادات تجميل','general ecommerce':'تجارة إلكترونية','water coolers, water dispensers & storage solutions':'برادات ومبردات وخزانات مياه','beauty & wellness':'جمال وعافية','fitness & gym':'لياقة وأندية رياضية','education & training':'تعليم وتدريب','real estate':'عقارات','professional services':'خدمات مهنية','home & field services':'خدمات منزلية وميدانية','hotel & travel':'فنادق وسفر','automotive':'سيارات وخدمات مركبات','technology & SaaS':'تقنية وبرمجيات'}[value] || value);
   const arModel = value => ({'Direct ecommerce':'تجارة إلكترونية مباشرة','service purchase online':'شراء خدمة أونلاين','product purchase online':'شراء منتجات أونلاين','B2B lead generation':'توليد فرص B2B','lead generation / booking':'توليد فرص وحجوزات','information / brand presence':'موقع تعريفي وحضور رقمي','Direct ecommerce (primary) + B2B/project sales (secondary)':'تجارة إلكترونية مباشرة (أساسي) + مبيعات مشاريع B2B (ثانوي)','ecommerce + B2B/project sales':'تجارة إلكترونية + مبيعات مشاريع B2B','B2B / project sales':'مبيعات المشاريع والشركات'}[value] || value);
-  const arSiteMode = value => ({ecommerce_store:'متجر إلكتروني',service_commerce:'خدمات تُشترى أونلاين',lead_generation_service:'موقع خدمات وتوليد فرص',informational_website:'موقع تعريفي'}[value] || value);
+  const arSiteMode = value => ({ecommerce_store:'متجر إلكتروني',service_commerce:'خدمات تُشترى أونلاين',lead_generation_service:'موقع خدمات وتوليد فرص',b2b_project_site:'موقع مشاريع وشركات',informational_website:'موقع تعريفي'}[value] || value);
   const arText = value => ({'Cart / checkout':'السلة / إتمام الطلب','B2B / projects':'المشاريع والشركات','Quote request':'طلب عرض سعر','WhatsApp':'واتساب','Reviews':'التقييمات','Loyalty':'الولاء','Installments':'التقسيط','Delivery':'التوصيل','Consumers / homes':'المستهلكون / المنازل','Projects / companies':'المشاريع / الشركات','Mosques / charity':'المساجد / الجهات الخيرية','Farms / outdoor':'المزارع / الاستخدام الخارجي','Saudi-made positioning':'تموضع سعودي الصنع','Free delivery':'توصيل مجاني','Warranty':'الضمان','Loyalty program':'برنامج الولاء','Made for Saudi climate':'مصمم لمناخ السعودية'}[value] || value);
 
   async function scan(payload) {
@@ -138,3 +138,10 @@
 
   form.addEventListener('submit', async event => {
     event.preventDefault(); event.stopImmediatePropagation();
+    const website = normalizeUrl(form.website.value), button = form.querySelector('button'); button.disabled = true; result.innerHTML = '';
+    status.textContent = 'أحلل المشروع من الرابط: النشاط، المنصة، المنتجات، الأسعار، مسار الإيراد الأساسي والثانوي، العملاء، والـmarketing stack ثم أبني التقدير…';
+    try { const data = await scan({ lead:{ name:nameFromUrl(website), website }, language: languageSelect?.value === 'en' ? 'en' : 'ar', assumptions:{} }); render(data); status.textContent = 'Live scan complete · business inferred directly from URL · public data only · figures are estimates'; }
+    catch (error) { status.textContent = `Scan error: ${error.message}`; }
+    finally { button.disabled = false; }
+  }, true);
+})();

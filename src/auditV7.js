@@ -9,7 +9,10 @@ function normalizedModel(audit={}){
   const f=bi.funnelSignals||{};
   const platform=String(bi.platform?.name||bi.platform||'').toLowerCase();
   const serviceCommerce=bi.siteMode==='service_commerce';
-  const ecommerce=Boolean(bi.commerce?.ecommerce||f.cartDetected||f.checkoutDetected||serviceCommerce||/salla|shopify|woocommerce/.test(platform)||/ecommerce/.test(String(bi.businessModel||'').toLowerCase()));
+  // A detected platform is not proof of a store. Shopify and Salla also host
+  // informational and lead-generation sites; require purchase evidence or an
+  // explicit commerce classification from the intelligence pass.
+  const ecommerce=Boolean(bi.commerce?.ecommerce||f.cartDetected||f.checkoutDetected||serviceCommerce||bi.siteMode==='ecommerce_store'||/ecommerce/.test(String(bi.businessModel||'').toLowerCase()));
   const b2b=Boolean(bi.commerce?.b2b||f.b2bDetected||f.b2bPageDetected||f.b2bSecondaryDetected||/b2b|project/.test(String(bi.businessModel||'').toLowerCase()));
   if(ecommerce){
     bi.primaryRevenueMotion=serviceCommerce?'service purchase online':'Direct ecommerce';
@@ -192,10 +195,11 @@ function modeledRows(audit={},base){
   const categoryCount=n(bi.catalog?.categoryCount||deep.inventory?.categoryUrlCount||bi.pageInventory?.categoryLinks||bi.categories?.length);
 
   // Modeled rows are strategic upside supported by this exact site's structure. They are never presented as missing features.
-  if(categoryCount>=4){
+  const mode=bi.siteMode||'';
+  if(categoryCount>=4&&(mode==='ecommerce_store'||mode==='service_commerce')){
     rows.push(row({service:'Search & category demand growth',reason:clinic?`تم رصد ${categoryCount} فئة علاجية فعلية؛ المطلوب ربط كل خدمة بالعرض المناسب وطريقة الحجز بوضوح.`:`تم رصد ${categoryCount} تصنيفات فعلية؛ الفرصة هي تقوية الربط بين خطة الكلمات والمقالات وصفحات التصنيفات والمنتجات، وليس إنشاء خطة SEO من الصفر.`,evidence:clinic?`التصنيفات العلاجية ظاهرة في الموقع، لكن الفحص العام لا يقيس ترتيب الكلمات أو نسبة الحجز من كل فئة.`:`التصنيفات والمحتوى موجودان في الموقع؛ الفحص العام يثبت وجودهما، لكنه لا يثبت أداء الكلمات أو المبيعات الناتجة من البحث.`,lowRate:.002,highRate:.010,confidence:64},base));
   }
-  if(productCount>=8){
+  if(productCount>=8&&mode!=='informational_website'&&mode!=='lead_generation_service'&&mode!=='b2b_project_site'){
     rows.push(row({service:clinic?'Service & offer merchandising / booking CRO':'Product merchandising & CRO',reason:clinic?`تم رصد كتالوج خدمات/عروض فعلي (${productCount} عرضًا تقريبًا)؛ المطلوب اختبار ترتيب الباقات داخل فئات العلاج وربطها بالحجز أو التواصل، وليس افتراض أن المنتجات غير مرتبة.`:`تم رصد كتالوج فعلي (${productCount} منتج تقريبًا) ومسار شراء مباشر؛ هذا headroom لاختبار ترتيب المنتجات والمقارنة والعروض، وليس خللًا مثبتًا.`,lowRate:.0015,highRate:.008,confidence:61},base));
   }
   if(f.loyaltyDetected){
